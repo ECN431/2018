@@ -1,11 +1,13 @@
+# R base files
 .Rproj.user
 .Rhistory
 .RData
 .Ruserdata
 lab.Rproj
-.aux
-.fls
-.log
-.out
-.synctex.gz
-cache.yaml
+# LaTeX build files
+*.aux
+*.fls
+*.log
+*.out
+*.synctex.gz
+*-cache.yaml
