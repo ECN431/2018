@@ -2,10 +2,11 @@
 .Rhistory
 .RData
 .Ruserdata
-lab.Rproj
+.Rproj
 .aux
 .fls
 .log
 .out
 .synctex.gz
 cache.yaml
+.yaml
