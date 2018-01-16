@@ -1,0 +1,117 @@
+\documentclass[12pt,a4paper]{article}
+
+
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{multirow}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage[top=1in, bottom=1in, left=1in, right=1in]{geometry}
+
+
+\title{ECN431\\Lab session 1\\Empirical analysis starter}
+\date{Aud 12 \\ Friday, January 19\textsuperscript{th} 2018}
+\begin{document}
+\maketitle
+
+\section*{Before the Lab}
+\begin{itemize}
+\item Make sure you have access to R on your laptop with necessary packages -- you can find a helpful guide for this on the GitHub page for the course.
+\item Make sure you have the data file and the R notebook with examples and hints available locally. If you clone the git repository using the guide on the Github page of the course, these files will be included. If you cloned the repository prior to the files being posted, you can update your cloned repository on Github (see the Github page of the course for details).
+\item Try to read through the background information on the ``case'' below prior to the lab and start working on the exercises. This will greatly improve the usefulness of the lab session. Use the provided notebook \emph{lab1_example.Rmd} to get started.
+\end{itemize}
+
+\section*{Purpose of this lab}
+To explore data on market and firm behavior with the purpose of understanding the important features, to reason about endogeneity issues, reason about what we can learn from observation, and be able to present your findings in a suitable form.
+
+\subsection*{Learning goals}
+\begin{itemize}
+\item	Understand omitted variable bias
+\item	Improve reasoning about endogeneity
+\item	Understand indicator variables and regression
+\item	Be able to produce informative tables and graphs
+\end{itemize}
+
+
+\subsection*{Practical information}
+The easiest way to work with the example R notebook is by opening it in RStudio. This file contains commands that you will need in order to answer the questions in these exercises, in addition to information on some new commands. Remember: If/when you are uncertain about the purpose, functionality and extensions to/options for some of the commands, just select the command (either where it's written in the code editor, or by writing it in the console) hit F1 in RStudio.
+
+
+\section*{Exercises}
+
+\subsection*{Rossmann: Competition and promotional activities}
+Dirk Rossmann GmbH, commonly known as Rossmann, is Germany's second largest chain of drug stores after dm-drogerie markt (\emph{dm}). Rossmann has over 3,500 outlets and 50,000 employees in several European countries, with a turnover of 8.4 billion EUR in 2016. Compared to pharmacies in Scandinavia, Rossmann (and it's competitiors) carry a larger variety of products, such as consumables, household products and other groceries. With its large operations, demand forecasting and logistics planning is important in the short run for cost minimization, while understanding the competitive situation and expansion choices through new outlets is important in the longer run for profit maximization.
+
+In this exercise, you will use panel data on 1 115 Rossman stores in Germany from the file \emph{rossmann.dta}. The data is recorded on a daily level from January 2013 to July 2015, and contains information on sales, number of customers, promotion campaigns, the competitive situation, records of holidays, and the store itself.
+
+\begin{enumerate}
+\item Rossmann has four different store concepts. The exact nature of them are not revealed in these data, though the variable \emph{storetype} contains a classification. Tabulate the values of \emph{storetype}. The values are stored as text (strings).
+\item Regress sales on store concept (indicators for each). How would you interpret this?
+\item Make a bar chart showing the share of time/days each store concept is open.
+\item Regress sales on store concept and the indicator for being open. What is the interpretation of the coefficients? Explain the change in coefficients on store concepts, and try to show this using regressions and calculations.
+\item Regress sales on store concept interacted with the indicator for being open. Interpret the coefficients, particularly noting the difference with the previous estimates.
+\item Make a table of average sales per store concepts only for days the store is open, and explain how this relates to the coefficients you just estimated.
+\item Regress sales on store concept only for days when a store is open. Explain the change in $R^2$ from the previous regression.\footnote{Once you're certain about your explanation, feel free to contemplate whether and when $R^2$ is useful.} Under what circumstances will it be okay to limit the sample in this way? You can assume that you want to estimate a more complicated model.
+\item Regress sales on whether the store has a competitor nearby (the variable \emph{competition}), with and without controlling for whether the store is open. What do you make of the coefficients? Calculate what they imply in percentage changes. What could be a potential issue with controlling for stores being open in this regression? Taking the issue(s) you think could be relevant, try to investigate whether there is reason to be worried using the data.
+\item Regress sales on distance to the closest competitor.\footnote{Tip: Distance is measured in meters here. Generate a variable measuring it in km instead. Sometimes, coefficients are a bit difficult to read and sensibly interpret if they become ``too'' small or ``too'' big. If there is a sensible rescaling which alleviates this problem, you should do it.} Make sense of the coefficient.
+\item Create a graph or table showing the share of observations facing competition each year (the average of competition in each year). What does it tell us about variation in competition over time? Also create a graph or table showing average daily sales for each year (see if you can combine both figures/tables). What does this tell us about the regression of competition on sales?
+\item Run the regression of sales on competition with store-fixed effects. Use the command \texttt{plm} from the package \texttt{plm}. How would you describe the variation in the competition variable used for estimating the coefficients in this regression compared to the regression without fixed effects?\footnote{Hint: What are we partialling out here?} Also add dummies for each year and compare the results. What could still be issues with interpreting the coefficient on competition as the (causal) effect of competition on sales?
+\item Also run a regression of being open on competition with store-fixed effects. Would you say that you are more confident in these estimates informing us about how competition affects how often stores are open, compared to the ones without fixed effects?
+\item Make a graph or table showing how common the two different promotional activities are for each of the store concepts. Promotions spanning the whole chain is indicated by \emph{promo}, while store-specific promotion is indicated by \emph{promo2}.
+\item You want to regress sales on both type of promotions interacted with store type (can you explain why this could be a sensible thing to do?). Decide first if it is \emph{necessary} to control for competition in this regression, and explain your choice. Run the regression both with and without store-fixed effects, and output the results side by side in a sensibly formatted table using \texttt{stargazer}. Interpret and try to find potential explanations for the differences in coefficient estimates between the two regressions.
+\item Extra:
+\begin{enumerate}
+\item Generate a table of summary statistics for sales, customers, being open, promotion (both types), nearby competition, and distance to nearest competitor.
+\item Calculate the number of stores who, during our sample period: a) Never face competition, b) Always face competition and c) Started facing competition
+\item Make a graph showing the number stores getting competition in each month (where competition goes to 1 from 0 in the previous month).
+\item For the stores who had a competitor enter nearby during our sample period, generate a counter for days centered on entry by competition (takes the value 0 on the day competition started, 1 the day after and so on, and -1 the day before and so on). Make a plot of average sales for each day relative to competitive entry among these stores in window of 90 days before to 90 days after. Interpret and comment. What do we learn about the regressions we ran from this plot?
+\end{enumerate}
+\end{enumerate}
+
+%
+% \subsection{The Nordic electricity market: Hydro, intertemporal decisions and other issues}
+%
+% The file \emph{spotprice.dta} contains data on electricity spot price contracts in Norway for 2010--2015. Use these data to answer the following questions.
+% \begin{enumerate}
+% \item Find the largest and smallest values of the fixed fee for the contract. Does the range make sense? Explain.
+% \item Generate a new variable containing the natural logarithm of the fixed fee. Why do we get so many missing values?
+% \item How many observations have no fixed fee? What percentage is this of the total sample?
+% \item How many observations have a fixed fee between 200 and 400?
+% \item Compare the fixed fees and the markups. Which is more often zero?
+% \item Find the correlation between fixed fees and markup. What do you conclude?
+% \item Make a scatter plot of fixed fees against markups. Does it fit with what you suspected from the correlation? Do you feel that the scatter plot conveys the information in this data set well?
+% \item Find the average and standard deviation of markup for contracts without a fixed fee. Would you say that there is wide variation in markups for contracts without fixed fee? Make a histogram of the markup for these contracts. What do you think now?
+% \item Find the median fixed fee and markup. If the contract had these terms, and a consumer uses 800 kWh during a month, what would the company get in revenue from this consumer that month? How many contracts have these terms?
+% \item Advanced:
+% \begin{enumerate}
+%  \item Transform the dataset so it contains the number of active firms, number of contracts, the average markup and average fee by week. (One row per week, four columns)
+%  \item Create and store two graphs: one for the average markup over time, and one for average fixed fee over time. Insert the graphs into a document.
+%  \item What is the correlation between average markup and average fixed fee? Why has this changed so dramatically?
+%  \item Make a scatterplot of fixed fees against markups. What do you make of this?
+%  \item In a single graph, show both the average markup and number of active firms over time. Do the same for average fixed fee and number of offered products. Do you see any relationship? Do you think it is spurious?\footnote{If you don't know what a spurious relation is, you can visit \url{http://tylervigen.com/spurious-correlations}.}
+% \end{enumerate}
+% \end{enumerate}
+%
+%
+% The dataset \emph{airfare.dta} contains information on U.S. domestic city-pair flight routes. Load this file into Stata and do the following exercises:
+%
+% \begin{enumerate}
+% \item How many unique routes are there in the data?
+% \item Generate the log (natural) of average passengers per day, average one-way fare and distance. Remember to label your variables!
+% \item Regress passengers on fare, then regress the log of passengers on log of fare. Interpret the regression coefficients in each model. Which model do you think is better, and why?
+% \item Regress log fare on market share of the biggest carrier. Does the result make sense?
+% \item Make a scatter plot of log fare on biggest market share. Though this is not too bad, with many observations, scatterplots generally become muddled and useless. Install the command \texttt{binscatter}, and make a binned scatter plot of the log fare against market share of biggest carrier.\footnote{I advice you to read more about this very useful graphing tool at the webpage of Michael Stepner, who created the code: \url{https://michaelstepner.com/binscatter/}}
+% \item Make a binned scatter plot of biggest market share against log distance, and another of log fare against log distance. How can this be used to explain the the result from the regression of (log) price on market share?
+% \item What regression do you want to run now? Do it, and interpret the results.
+% \item Try to find some evidence of (simple) non-linearities in the effect of log distance on (log) fare. Does this affect the coefficient on market share in the fare regression?
+% \item Regress log passengers on log fare and some specification of distance you think makes sense. Does the coefficient on log fare make sense? What could be the problem here?
+% \item Export the previous table to a document. If you have time, install the package \texttt{estout} and see if you can use the command \texttt{esttab} to format the table directly from Stata.
+% \item Advanced:
+% \begin{enumerate}
+%  \item Regress log passengers on log fare and distance terms, with fixed effects for route (panel method: fixed effect regression). What does the change in the coefficient on log fare from the previous (OLS) regression tell you? Why do the distance terms drop out of this regression?
+%  \item Regress log passengers on log fare and some distance specification, while using biggest market share as an instrument for price (e.g., 2SLS). Don't use fixed effects here. Compare the coefficient on log fare to the previous models. Look at the first stage regression, and assess the relevance of the instrument. Do you think the market share is a good instrument? Can you think of any potential problems?
+% \end{enumerate}
+% \end{enumerate}
+
+
+\end{document}

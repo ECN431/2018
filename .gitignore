@@ -3,3 +3,9 @@
 .RData
 .Ruserdata
 lab.Rproj
+.aux
+.fls
+.log
+.out
+.synctex.gz
+cache.yaml

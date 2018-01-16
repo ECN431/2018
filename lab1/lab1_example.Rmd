@@ -1,0 +1,318 @@
+---
+title: "Lab 1"
+author: "Morten Sæthre"
+date: "January 15, 2018"
+output: html_notebook
+---
+
+## Intro
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. In a notebook, you can write text combined with code. Text is written in a simplified markup language known as [Markdown](https://en.wikipedia.org/wiki/Markdown). *R Markdown* is a particular version of Markdown.
+
+Code is entered within so-called *chunks*, which you will see many of in this document. You can execture "chunks" by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*.
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+
+## Setup
+First, we need to load the data. At the same time, we're going to load some packages that will be useful. In R, we load packages by `library(packagename)`. Loading "tidyverse" actually loads several packages that are very helpful for working with data in an efficient manner. In addition, we will load *Stargazer* for table output, *knitr* for creating dynamic reports, *lubridate* to work with date and time data, and *plm* for panel data econometrics.
+
+The data are in a comma-separated format (a very standard format for data files, due to its simplicity and not being tied to any given analysis software or system), which we can load with the function `read_csv` from *readr* (part of tidyverse).
+```{r, include = FALSE}
+library(tidyverse)
+library(stargazer)
+library(knitr)
+library(lubridate)
+library(plm)
+
+rossmann <- read_csv('rossmann.csv')
+```
+
+When we load data using tidyverse functions, we get a *tibble* which is quite similar to the traditional R dataframe with some convenient features. If we just output the tibble of the data in a notebook, we get a browseable view of them. Another way of inspecting the data in RStudio is to click on the corresponding name in the *Environment* tab (located in the upper right by default), which will open a new tab with a spreadsheet-like view.
+```{r}
+rossmann
+```
+
+
+## 1.
+There are several ways to tabulate the values of a variable in R. The function `count` from `dplyr` (part of the tidyverse) is particularly simple. Here it is illustrated with the use of a *pipe*. A pipe allows us to send the results of the previous expression to the next function. A pipe is written as `%>%`, and can be entered using the keyboard shortcut *Ctrl+Shift+M* in RStudio. The functions of the Tidyverse are designed to work well with pipes, such that the first argument is replaced by the previous result when included in the pipe.
+```{r}
+rossmann %>% count(storetype)
+```
+
+This is a quite trivial example of using pipes. In this case, we could just as well use the more traditional way of performing this operation:
+```{r}
+count(rossmann, storetype)
+```
+
+
+## 2.
+To get a better scale on the numbers in tables, I rescale sales and customers to be interpreted in thousands, and distance to the nearest competitior to kilometers. Choice of scale depends on the particular application and is also a question of taste. The function `mutate` is used to add variables. Each new variable is separated by a comma, where we write "new variable name = expression", where the expression can involve most any function and computation, and conveniently refer to columns that are already in the data.
+```{r}
+rossmann <- rossmann %>% 
+  mutate(
+    salest = sales / 1000,
+    customerst = customers / 1000,
+    compdistkm = compdist / 1000
+)
+```
+
+We run regressions using the command `lm` (linear model). Note that you must explicitly tell what data to use, since R can hold an arbitrary amount of separate data sets in memory at a time (up to memory restrictions of your computer). The regression results can be stored in a variable - here `salereg_storetype`. Note that the storetype-variable is stored as text (character column). R will interpret this as a categorical variable and automatically run the regression including indicators for each unique value (excluding one baseline category). If we want to explicitly use a variable as a categorical (called *factor* in R), for instance if the categories are stored as numbers (which R would use as a continuous regressor by default), we can write `factor(storetype)` in the regression formula.
+```{r}
+salereg_storetype <- lm(salest ~ storetype, data = rossmann)
+```
+
+To output the regression results, we can use the standard function `summary`:
+```{r}
+summary(salereg_storetype)
+```
+Usually, we prefer a different way of formatting the regression tables, e.g., standard errors in parantheses below the coefficients. `stargazer` automates this for us. The option `type = 'text'` is appropriate when we want to view the results in the console or directly below the code chunk in the notebook. If we want to "knit" the document to another format (to make a report), we should choose the appropriate type for the format, for instance `type = 'html'` for html-documents that can be opened by a standard browser.
+```{r}
+stargazer(salereg_storetype, type = 'text')
+```
+
+
+
+## 3.
+If you are uncertain about how to use a certain command, type the command and hit F1, or alternatively search for it in the *Help* tab on the right in RStudio.
+If you are uncertain about what command to use at all, try googling what you want to achieve.
+
+A very good graphing package in R is `ggplot2`. There is an immense number of possible figures one can make using the right commands. A figure is initialized by calling the command `ggplot`, telling it what data to use with the `data` argument. The mapping of data (what is on the x-axis, y-axis, whether we want to split by groups with differently colored lines etc.) can be supplied either directly to the initial `ggplot` command, or to each separate part of the figure The most standard way of supplying this mapping is with the ggplot function `aes` ("aesthetic"), which takes arguments such as `x` and `y`. We can then add plots and other styling using appropriate commands separated by `+`. Here, we use `stat_summary` to generate the average of the y-variable (being open) for each x-value, and tell it to display the result as a bar graph (`geom = 'bar'`). We need to supply the argument `fun.y`, which tells `stat_summary` what statistic to produce, for example `'median'`, `'sd'` (standard deviation) and similar. The commands `xlab` and `ylab` are used to change the labels on the respective axes.
+```{r}
+ggplot(data = rossmann, mapping = aes(x = storetype, y = open)) +
+  stat_summary(fun.y = 'sd', geom = 'bar') +
+  xlab('Store concept') + ylab("Share of days open")
+```
+
+In this case, we could equivalently have supplied the mapping of variables to axes using `aes` to the `stat_summary` command instad. Note also that `ggplot` expects the data as the first argument, such that we do not need to explicitly write `data =`. Instead of the separate commands `xlab` and `ylab`, it can sometimes be more convenient to use the command `labs` which is used to change several labels in the plot.
+```{r}
+ggplot(rossmann) +
+  stat_summary(mapping = aes(x = storetype, y = open), fun.y = 'sd', geom = 'bar') +
+  labs(x = 'Store concept', y = 'Share of days open')
+```
+
+## 4.
+Here, we add the indicator variable open to the regression formula. I also illustrate a customization of the stargazer table output by restricting the additional regression statistics to the number of observations and R^2 with the argument `keep.stat` which takes a vector of names of regression statistics to include in the table. In R, we create vectors with `c()` containing a comma-separated list of values. The full list of possible regression statistics can be found in the documentation for stargazer (type or select "stargazer" in the code chunk and hit F1, and find the explanation for the "keep.stat" argument).
+```{r}
+salereg_storetype_open <- lm(salest ~ storetype + open, data = rossmann)
+stargazer(salereg_storetype_open, type = 'text', keep.stat = c('n', 'rsq'))
+```
+
+Hint for the second part: formula for omitted variable bias.
+
+
+## 5.
+To get interaction in regressions, we use `*` between the variables we want to interact. When we have categoricals/factors included in an interaction, the indicator for each category is interacted with the other variable. Also, additional customizations with stargazer is illustrated here: `digits` to control the number of digits after decimal for results in the table, and `dep.var.labels` to set a custom label above the results instead of the variable name (*salest*).
+```{r}
+salereg_storetypexopen <- lm(salest ~ storetype * open, data = rossmann)
+stargazer(salereg_storetypexopen, type = 'text', digits = 2,
+          keep.stat = c('n', 'rsq'), dep.var.labels = 'Sales in 1000')
+```
+
+
+## 6.
+The following code demonstrates how we can put pipes to good use. First, we send the data (rossmann) to the `filter` function, which can select rows based on conditions. Here, the condition is that the value of the column open is 1 (note the use of "double equal" `==` for testing equality). Next, we send the result to `group_by`, which splits the data in parts based on one or more variables/expressions. Finally, we call `summarize` on the grouped data, which can generate summary statistics for each group. Here, we assign the average of sales in thousands to a column we call avg_open_sale.
+```{r}
+rossmann %>% filter(open == 1) %>% group_by(storetype) %>% summarize(avg_open_sale = mean(salest))
+```
+
+
+## 7.
+Hint: we can use the function `filter` to select rows from a data set where one or more conditions are met.
+
+
+## 8.
+Fill in the correct code for the regressions below. Stargazer can be used to output several regression results in one table.
+```{r}
+salesreg_comp <- lm
+salesreg_comp_open <- lm
+
+stargazer(salesreg_comp, salesreg_comp_open, type = 'text',
+          keep.stat = c('n', 'rsq'))
+```
+
+
+## 9.
+
+
+## 10.
+The function `year` from the package lubridate will extract the year from a variable containing a date. The argument `geom = 'path'` makes `stat_summary` create a line graph from the result, which is the average value of competition for each year here.
+```{r}
+ggplot(rossmann, mapping = aes(x = year(date), y = competition)) +
+  stat_summary(fun.y = 'mean', geom = 'path') +
+  labs(y = 'Share facing competition', x = 'Year')
+```
+Fill in the necessary code to make this figure show the average sales for each year:
+```{r}
+ggplot(rossmann, mapping = aes(x = , y = )) + 
+  +
+  labs(y = 'Average sales', x = 'Year')
+```
+
+The following code will create a table with yearly average of sales in thousand and competition. Explain what `group_by` does here. Note that the aggregates we create with `summarize` can be freely named (left-hand side of the equal sign).
+```{r}
+rossmann %>% group_by(year(date)) %>% 
+  summarize(Competition = mean(competition), Sales = mean(salest))
+```
+To make the table look better, we can rename the slightly awkward column "year(date)" using the function `rename` as follows:
+```{r}
+rossmann %>% group_by(year(date)) %>% 
+  summarize(Competition = mean(competition), Sales = mean(salest)) %>% 
+  rename(year = 'year(date)')
+```
+To put both graphs in one figure with separate panels (note that we can "pipe" data to ggplot, which will then take the place of the first `data` argument). Read the [documentation for ggplot2](http://ggplot2.tidyverse.org/reference/index.html) to kearn more about the different graphing functions used here. For commands you are uncertain about, you can also highlight and press F1 to bring up the helper documentation in RStudio.
+```{r}
+rossmann %>% group_by(year(date)) %>% 
+  summarize(Competition = mean(competition), Sales = mean(salest)) %>%
+  rename(year = 'year(date)') %>% 
+  gather(key = 'variable', value = 'value', -year) %>% 
+  ggplot(aes(x = year, y = value)) +
+  geom_path() + facet_grid(variable ~ ., scales = 'free_y') + 
+  scale_x_continuous(breaks = c(2013, 2014, 2015)) +
+  labs(x = 'Year', y = '')
+```
+
+## 11.
+Here, we use the command `plm` to perform panel regression. The argument `index` takes a vector with the names of the variables that contain the id for observation unit and time information (here *store* and *date*). The argument `model` is used to specify the type of model to fit. Here we use `'within'` for a *within regression*, also known as the (individual) *fixed effects* model. Stargazer can display the results from panel regressions as well.
+```{r}
+salesreg_fe_comp <- plm(salest ~ competition,
+                             data = rossmann, index = c('store', 'date'), model = 'within')
+
+stargazer(salesreg_comp, salesreg_fe_comp, type = 'text',
+          column.labels = c('OLS', 'FE'), model.numbers = FALSE, model.names = FALSE,
+          keep.stat = c('n', 'rsq'))
+```
+
+
+Indicators for each year can be added to the regressions by `factor(year(date))`, where `year(date)` as before extracts the year component, while the function `factor` tells R that you want to consider a numerical variable as a categorical (otherwise, it would add a linear term in year). Fill in the necessary code:
+```{r}
+salesreg_comp_year <- lm
+
+salesreg_fe_comp_year <- plm
+
+stargazer(salesreg_comp, salesreg_fe_comp, salesreg_comp_year, salesreg_fe_comp_year, type = 'text',
+          column.labels = c('OLS', 'FE', 'OLS', 'FE'), model.names = FALSE,
+          keep.stat = c('n', 'rsq'))
+```
+
+
+## 12.
+Fill in the necessary code below. Also use stargazer to compare the fixed-effects result with the previous OLS regression of being open on competition.
+```{r}
+openreg_fe_comp <- 
+```
+
+
+## 13.
+Fill in the code to make the table:
+```{r}
+rossmann %>% group_by() %>% 
+  summarize()
+```
+
+To make a bar plot with separate bars for each type of promo with ggplot simple, we first calculate the average of promo and promo2 by store type, and then turn the variable names into a column using `gather`, while the values of the two columns are stacked in a new column which we just call *value* (the argument `value` sets what the name of the value-column should be). Feel free to look at the result of this operation. The last argument of gather is a list of variables to "gather" in this way, where `-storetype` means that it should gather all columns *except* storetype (could equivalently write `gather(key = Promotion, value = value, Chain, Store)`). We then tell ggplot that we want to have storetype on the x-axis, the average of the promotion variables on the y-axis (remember that the promotion averages have been stacked in the column *value*), and that we want to separately show the results by *Promotion* type with different "fill" (will for instance give different color to bars). The plot `geom_col` tells ggplot that we want bars where the height is determined by the value of the y-variable. The argument `position = 'dodge'` tells ggplot to put the bars side by side (instead of stacked, which is the default).
+```{r}
+rossmann %>% group_by(storetype) %>% 
+  summarize(Chain = mean(promo), Store = mean(promo2)) %>% 
+  gather(key = Promotion, value = value, -storetype) %>% 
+  ggplot(mapping = aes(x = storetype, y = value, fill = Promotion)) +
+  geom_col(position = 'dodge') +
+  labs(x = 'Store concept', y = 'Share of days')
+```
+
+
+## 14.
+
+
+## 15.
+### a
+Stargazer can be used to create descriptive statistics tables. There's a catch that stargazer needs the data to be a dataframe for this operation (and not a tibble). This can be circumvented by turning the data into a dataframe by the function `as.data.frame`. The first two lines in the following code creates two vectors (remember that we can create vectors with `c()` in R); one containing the names of variables we want and one containing the text that we want to display for each variable in the descriptives table. The syntax `rossman[descvars]` select the columns corresponding to the names in the vector `descvar` from the data. An alternative would be to use `select` from the package `dplyr` (part of tidyverse), for instance `select(rossmann, descvars)` or `rossmann %>% select(descvars)`. The name/label to display for each variable is set using the argument `covariate.labels`.
+```{r}
+descvars <- c('salest', 'customerst', 'open', 'promo', 'promo2', 'competition')
+descnames = c('Sales in 1000', 'Customers in 1000', 'Store is open', 'Chain promotion',
+              'Store promotion', 'Competitor nearby')
+stargazer(
+  as.data.frame(rossmann[descvars]),
+  covariate.labels = descnames,
+  type = 'text',
+  digits = 2
+)
+```
+
+
+### b
+We should check the types of changes in competition in our dataset. Is there for example ever any exit? We can check the time series of *competition* within each store, and see that the value is never *reduced*. Making sure the data is sorted by store and date using `arrange`, we then add a variable equal to the difference between *competition* and it's lagged variable within store (`group_by` and then using `lag` in `mutate`). Then we can count the number of unique values of this variable. The missing (`NA`) values are due to the lagged value being missing for the first observation of each store.
+```{r}
+rossmann <- rossmann %>% arrange(store, date)
+rossmann <- rossmann %>% group_by(store) %>% mutate(changecomp = competition - lag(competition))
+
+rossmann %>% group_by(changecomp) %>% count()
+```
+
+We can obtain then the requested measures by first calculating the minimum and maximum value of *competition* for each store. Stores that have maximum value of 0 never have competition, while stores that have a minimum value of 1 always have competition. Here is a suggested start for the code, which you can try to fill in (or find your own solution).
+```{r}
+store_maxmincomp <- rossmann %>% group_by(store) %>%
+  summarize()
+
+store_maxmincomp %>%
+  summarize(
+    nevercomp = ,
+    alwayscomp = ,
+    getcomp = 
+  )
+```
+
+
+
+
+
+### c
+First, we need to know how to create a variable for the monthly date from a full date (containing both year, month and day). Using the function `floor_date` from the package lubridate, this is simple. The first argument of this function is the dates, while the second is a string specifying the time unit that the date will be rounded to. Here, the monthly date will be inserted as a new column prior to plotting, though we could just use `floor_date(date, 'month')` directly with ggplot as the x-axis variable.
+```{r}
+rossmann <- rossmann %>% mutate(monthdate = floor_date(date, 'month'))
+```
+
+Now, use ggplot to generate the *number* of stores experiencing entry by a competitor each month. You can use the variable *changecomp* generated in *b*.
+
+
+### d
+We must first get the date of entry for stores affected. We can select the part of the dataset where competition changes, using `filter`, then select only the store ID and date variables, renaming the date variable to *entrydate*. Then we can join the entrydate onto the original data with the function `inner_join`, using store ID as the key, selecting only the stores where entry date is not missing (the stores that experience entry). Note that `inner_join` only returns the observations where there is a match in both data set, i.e., that the store ID is preset in both. This means that we keep only the stores that are present in the entry date data, which are the ones that experience entry during the sample.
+```{r}
+entrydate <- rossmann %>%
+  filter(changecomp == 1) %>%
+  select(store, date) %>%
+  rename(entrydate = date)
+
+entrydata <- rossmann %>% select(store, salest, date, competition, changecomp) %>%
+  inner_join(entrydate, by = 'store')
+```
+
+We can then add a column of the difference in days between the date and entry date, as well as the minimum and maximum of this column for each store (gives the number of days before and after entry we observe for each store in the data), such that we can ensure that we observe all stores for the same amount of time (to make sure we are comparing the same stores over time).
+```{r}
+entrydata <- entrydata %>% mutate(t = date - entrydate)
+entrydata <- entrydata %>% group_by(store) %>% mutate(mint = min(t), maxt = max(t))
+```
+
+Selecting only the stores that are observable at least 90 days prior to and 90 days after entry, and restricting the window to exactly 90 days before up to 90 days after entry, we can plot the average sales across stores in each day relative to entry. This features a lot of noise, since stores might be closed on different times, have different sizes, etc. To help us interpret the graphical results, we can also add a plot of average sales within bins along the x-axis using `stat_summary_bin`, such that we average over longer periods of time. By specifying `fun.data = mean_cl_boot` (requires that the package `Hmisc` is installed, an alternative is `mean_se`), `stat_summary_bin` calculates both the average y-value within each bin as well as a 95% confidence interval for the estimate. The argument `binwidth` specifies how large the bins are in terms of the x-values (here: 10 days).
+```{r}
+entrydata %>% filter(mint <= -90, maxt >= 90, t >= -90, t < 90) %>% 
+  ggplot(aes(x = t, y = salest)) +
+  scale_x_continuous(breaks = seq(-90, 90, 10)) +
+  stat_summary(geom = 'path', fun.y = 'mean') +
+  stat_summary_bin(fun.data = 'mean_cl_boot', binwidth = 10, color = 'dodgerblue') +
+  labs(x = 'Days relative to entry', y = 'Sales in thousand')
+```
+
+To understand the importance of restricting the sample to where we observe
+all stores, you can run the following and interpret what is happening:
+(this will be useful for understanding the difference between these estimates
+and the fixed effects estimates where we included all observations for the
+stores facing competition)
+```{r}
+entrydata %>%
+  ggplot(aes(x = t, y = salest)) +
+  stat_summary(geom = 'path', fun.y = 'mean') +
+  labs(x = 'Days relative to entry', y = 'Sales in thousand')
+```
+

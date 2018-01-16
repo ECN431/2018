@@ -17,8 +17,11 @@ We recommend using [R](https://www.r-project.org/) for this course, though Stata
 Prior to the first lab session, you should make sure you have working installations of [R](https://cran.uib.no/) and [RStudio](https://www.rstudio.com/products/rstudio/download/) (choose the free desktop version). You should also make sure you have the following packages installed:
 * Tidyverse - `install.packages('tidyverse', dependencies=TRUE)`
 * Stargazer - `install.packages('stargazer', dependencies=TRUE)`
-* AER - `install.packages('AER', dependencies=TRUE)`
 * knitr - `install.packages('knitr', dependencies=TRUE)`
+* Lubridate - `install.packages('lubridate', dependencies=TRUE)`
+* plm - `install.packages('plm', dependencies=TRUE)`
+* AER - `install.packages('AER', dependencies=TRUE)`
+
 
 Tip: You can see the list of installed R packages under the "Packages" tab in the lower-right pane in RStudio.
 
@@ -27,8 +30,9 @@ In addition, we recommend that you make yourself familiar with the basic working
 * [RStudio's Online Learning suggestions](https://www.rstudio.com/online-learning/)
 * [DataCamp Introduction to R](https://www.datacamp.com/courses/free-introduction-to-r) (can be previewed, but requires creating a free account to go through all exercises)
 * [R for Data Science](http://r4ds.had.co.nz/) (more advanced and focused on data management and graphical analysis)
+* [Principles of Econometrics with R](https://bookdown.org/ccolonescu/RPoE4/) (some basic and some advanced topics in econometric analysis with R. Not everything is relevant for this course.)
 
-Particularly, knowing the basics of how to load data, manipulate variables, generate descriptive statistics and run regular linear regressions (OLS) will be helpful.
+Particularly, knowing the basics of how to load data, manipulate variables, generate descriptive statistics and run regular linear regressions (OLS) will be helpful. Note that you are not expected to be familiar with all topics in the sources listed, just the basics of R and the topics covered in the introductory econometrics course at NHH (master level).
 
 You can find an enormous amout of resources for R online. You will likely find that most practical problems you encounter has a solution online you can find by an appropriate online search query (I do mean to say you should google it).
 
