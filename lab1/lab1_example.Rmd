@@ -264,11 +264,8 @@ store_maxmincomp %>%
 ```
 
 
-
-
-
 ### c
-First, we need to know how to create a variable for the monthly date from a full date (containing both year, month and day). Using the function `floor_date` from the package lubridate, this is simple. The first argument of this function is the dates, while the second is a string specifying the time unit that the date will be rounded to. Here, the monthly date will be inserted as a new column prior to plotting, though we could just use `floor_date(date, 'month')` directly with ggplot as the x-axis variable.
+First, we need to know how to create a variable for the monthly date from a full date (containing both year, month and day). Using the function `floor_date` from the package lubridate, this is simple. The first argument of this function is the dates, while the second is a string specifying the time unit that the date will be rounded (down) to. Here, the monthly date will be inserted as a new column prior to plotting, though we could just use `floor_date(date, 'month')` directly with ggplot as the x-axis variable.
 ```{r}
 rossmann <- rossmann %>% mutate(monthdate = floor_date(date, 'month'))
 ```

@@ -20,10 +20,10 @@ Prior to the first lab session, you should make sure you have working installati
 * knitr - `install.packages('knitr', dependencies=TRUE)`
 * Lubridate - `install.packages('lubridate', dependencies=TRUE)`
 * plm - `install.packages('plm', dependencies=TRUE)`
+* Hmisc - `install.packages('Hmisc', dependencies=TRUE)`
 * AER - `install.packages('AER', dependencies=TRUE)`
 
-
-Tip: You can see the list of installed R packages under the "Packages" tab in the lower-right pane in RStudio.
+Note that several of these packages might take require some time to install. Tip: You can see the list of installed R packages under the "Packages" tab in the lower-right pane in RStudio. The installation and lab exercises have been tested on R version 3.4.3 and RStudio version 1.1.383.
 
 In addition, we recommend that you make yourself familiar with the basic workings of R. Here are some suggested sources
 * [swirl](http://swirlstats.com/) (interactive exercises you run within R itself)
