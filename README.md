@@ -39,10 +39,11 @@ You can find an enormous amout of resources for R online. You will likely find t
 
 ## Git starter guide
 
-[Git](https://en.wikipedia.org/wiki/Git) is a version control system. Version control is a very useful tool for any project lasting more than a trivial amount of time, allowing you to systematically keep track of changes in your project (and revert if needed) and avoid the problem (and temptation) of having multiple iterations of the same file saved with different extensions ("homework_v2.tex", "homework_final_v7.tex", etc.). The learning curve to use Git successfully can be a bit steep, but for relatively simple projects (e.g., not involving hundreds of people involved in product development) the functionality you need to learn is very limited.
+[Git](https://en.wikipedia.org/wiki/Git) is a version control system. Version control is a very useful tool for any project lasting more than a trivial amount of time, allowing you to systematically keep track of changes in your project (and revert if needed) and avoid the problem (and temptation) of having multiple iterations of the same file saved with different extensions ("homework_v2.tex", "homework_final_v7.tex", etc.). The learning curve to use Git successfully can be a bit steep, but for relatively simple projects (e.g., not involving hundreds of people collaborating on product development) the functionality you need to learn is very limited.
 
 [GitHub](https://github.com/) allows you to store your files complete with version control history online. You can work on your files locally, then upload the changes to keep them safe, allow downloads to other devices, and sharing between collaborators.
 
+### Installation and basic setup of Git
 To start using Git, you can follow these steps:
 * Register for a free account at [GitHub](https://github.com/)
 * Install Git on your system:
@@ -52,10 +53,24 @@ To start using Git, you can follow these steps:
 * Open RStudio, open the *Tools* menu and select *Shell*. Enter a user name and email in Git
     - `git config --global user.name 'Morten Sæthre'` (replace with your own name or a freely chosen username)
     - `git config --global user.email 'morten.saethre@nhh.no'` (replace with *the same* email you used to register with GitHub)
-* Go back to this page and *fork* this repository by clicking the "Fork" button (should be somewhere in the upper right). Make sure you're logged in to GitHub. You should now have your own version of the course repository available under "Your repositories" on your GitHub home page. Copying the repository could also be achieved by *cloning*, but *forking* keeps a tighter link to the original repository (allowing you get updates in the original repository without destroying the work you've done in your fork).
-* In RStudio, open the "File" menu, select "New Project". Select "Version Control" and "Git". Go to your version of the course repository on GitHub, find the link by clicking *Clone or download* and copy it into the *Repository URL* in RStudio. Choose a sensible directory to store the files on your computer.
 
-The files from your fork of the repository on GitHub is now copied to your computer, and you are all set. In RStudio, you can now work with your project, and use the "Git" tab to handle version control of your work (should be in the upper right pane, otherwise you can find "Show Git" under the "View" menu). The most important commands are
+### Setting up Git and RStudio with this repository
+* Make sure you're logged in to GitHub and reading this text in the [course repository](https://github.com/ECN431/2018), and *fork* the repository
+    - You *fork* the repository by clicking the "Fork" button, which should be somewhere in the upper right of the page
+         + Copying the repository could also be achieved by *cloning*, but *forking* keeps a tighter link to the original repository. This will allow you get updates in the original repository without destroying the work you've done in your fork
+    - Go to the [GitHub home page](https://github.com/), which will display information for your user when you're logged in, and verify you have the forked course repository available under "Your repositories" (you might need to select "Forks")
+* In RStudio, open the "File" menu and select "New Project" (or click the "Create a project" button)
+    - Select "Version Control" and "Git", which will ask for "Repository URL"
+    - Go to your forked version of the repository on GitHub (you can click the name under "Your repositories"), find the link by clicking "Clone or download" and insert it as "Repository URL" in RStudio
+    - Choose a sensible directory to store the files on your computer: the "Project directory name" (for example "ECN431") will be a new folder on your computer under whichever folder you choose as "Create project as a subdirectory of"
+
+The files from your fork of the repository on GitHub is now copied to your computer, and you are all set.
+
+### Updating when new material is available
+Prior to each lab, we will make all material available in this repository. To fetch the updates to your fork, 
+
+### Use Git from RStudio
+When you work with your project in RStudio, you can use the "Git" tab to handle version control of your work (should be in the upper right pane, otherwise you can find "Show Git" under the "View" menu). The most important commands are
 * to *stage* any changed/new files you want to update in your repository
     - check the box under "Staged" in the file view of the "Git" tab (if you want to stage/update all files listed, you just leave all boxes unchecked and go straight to *commit*)
 * to *commit* the changes, which will update your *local* snapshot (a copy of the current state of the files)
