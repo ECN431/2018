@@ -2,8 +2,6 @@
 
 Lab exercises and other course material.
 
-Test change.
-
 ## How to use this repository
 
 Folders for each lab exercise will be published here, complete with data and helper files. After each session, a full solution proposal will be published here. We recommend that you use *Git* to make a local copy (in the form of what is known as a *fork* in Git terminology) on your computer, which can then be updated when we post new files or exercises. Alternatively, you can download the whole repository (find the "Clone  or download" button), or download each file separately (by right-clicking and choosing the appropriate option).
