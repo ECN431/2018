@@ -55,8 +55,8 @@ To start using Git, you can follow these steps:
 
 ### Setting up Git and RStudio with this repository
 * Make sure you're logged in to GitHub and reading this text in the [course repository](https://github.com/ECN431/2018), and *fork* the repository
-    - You *fork* the repository by clicking the "Fork" button, which should be somewhere in the upper right of the page
-         + Copying the repository could also be achieved by *cloning*, but *forking* keeps a tighter link to the original repository. This will allow you get updates in the original repository without destroying the work you've done in your fork
+    - You fork the repository by clicking the "Fork" button, which should be somewhere in the upper right of the page
+         + Copying the repository could also be achieved by *cloning*, but *forking* keeps a tighter link to the original repository. This will allow you get updates from the original repository without destroying the work you've done in your fork
     - Go to the [GitHub home page](https://github.com/), which will display information for your user when you're logged in, and verify you have the forked course repository available under "Your repositories" (you might need to select "Forks")
 * In RStudio, open the "File" menu and select "New Project" (or click the "Create a project" button)
     - Select "Version Control" and "Git", which will ask for "Repository URL"
@@ -67,14 +67,19 @@ The files from your fork of the repository on GitHub is now copied to your compu
 
 ### Updating when new material is available
 Prior to each lab, we will make all material available in this repository. This means that your fork needs to be updated with the new material.
-* Log in to GitHub and go to your forked version of the repository
-* Click the button "New pull request"
-* Select your fork as "base fork"
+1. Log in to GitHub and go to your forked version of the repository
+1. Click the button "New pull request"
+1. Select your fork as "base fork"
     - The name should involve your username, similar to "username/project directory name" (where project directory name is the one you chose in RStudio)
-* You likely get a message along the lines "Nothing to compare"
+1. You likely get a message along the lines "Nothing to compare"
     - Click "compare across forks"
-* Select "ECN431/2018" as "head fork"
-* Click the button "Create pull request"
+1. Select "ECN431/2018" as "head fork"
+1. Click the button "Create pull request"
+    - Fill in at least a title for the pull request, for example "Update lab material" (might be filled in already if there is only one commit to merge from the course repository), and possibly a comment
+    - Click "Create pull request" again
+1. If you see the message "This branch has no conflicts with the base branch", you can click the button "Merge pull request" and you're done
+
+*In case of conflict*: If you get a message along the lines "Conflicts found/need to be resolved", it means that the same files have been changed *both* in your fork and in the course repository. It is necessary to resolve the conflicts. The easiest will probably be to cancel/close the pull request, delete the conflicting files from your computer (it's highly unlikely that it's any of your own work), use RStudio to stage, commit and push the deletions (see the next section), and go back to GitHub and start from step 1 above.
 
 ### Use Git from RStudio
 When you work with your project in RStudio, you can use the "Git" tab to handle version control of your work (should be in the upper right pane, otherwise you can find "Show Git" under the "View" menu). The most important commands are
@@ -82,6 +87,7 @@ When you work with your project in RStudio, you can use the "Git" tab to handle 
     - check the box under "Staged" in the file view of the "Git" tab (if you want to stage/update all files listed, you just leave all boxes unchecked and go straight to *commit*)
 * to *commit* the changes, which will update your *local* snapshot (a copy of the current state of the files)
     - click "Commit" in the "Git" tab
+    - add a [commit message](#commit-messages)
 * to *push* the changes, which will update the snapshot in your GitHub repository
     - click "Push" in the "Git" tab
 
@@ -89,6 +95,23 @@ To learn more of the details of recording changes to the repository, you can rea
 
 If you want to learn more about using RStudio and Git together, we can recommend the online book [Happy Git and GitHub for the useR](http://happygitwithr.com/) (note that some of the content might be a bit Linux centric).
 
+### Commit messages
+The customary way of structuring a commit message is to add a one-sentence header starting with a present tense verbs (ex.: "Add thesis document", "Change main analysis"). Unless it's a completely trivial commit, e.g., "Fixed typos in introduction of thesis", you should add a short description below the header, leaving one blank line between them.
+
+Example:
+```
+Add separate regressions by firm size to analysis section
+
+Perform the profitability regressions by categories of firm
+size (<10, 10-50, >50).
+
+Main results were behaving strange when changing the set of
+control variables. Advisor suggested we try this.
+
+Results suggests that the control variables have different
+implications for firms of different sizes. Still need to
+interpret the differences in the main coefficient.
+```
 
 ## Other information and tips on using R
 
