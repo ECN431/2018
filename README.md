@@ -108,7 +108,7 @@ size (<10, 10-50, >50).
 Main results were behaving strange when changing the set of
 control variables. Advisor suggested we try this.
 
-Results suggests that the control variables have different
+Results suggest that the control variables have different
 implications for firms of different sizes. Still need to
 interpret the differences in the main coefficient.
 ```
