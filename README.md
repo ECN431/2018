@@ -66,7 +66,15 @@ To start using Git, you can follow these steps:
 The files from your fork of the repository on GitHub is now copied to your computer, and you are all set.
 
 ### Updating when new material is available
-Prior to each lab, we will make all material available in this repository. To fetch the updates to your fork, 
+Prior to each lab, we will make all material available in this repository. This means that your fork needs to be updated with the new material.
+* Log in to GitHub and go to your forked version of the repository
+* Click the button "New pull request"
+* Select your fork as "base fork"
+    - The name should involve your username, similar to "username/project directory name" (where project directory name is the one you chose in RStudio)
+* You likely get a message along the lines "Nothing to compare"
+    - Click "compare across forks"
+* Select "ECN431/2018" as "head fork"
+* Click the button "Create pull request"
 
 ### Use Git from RStudio
 When you work with your project in RStudio, you can use the "Git" tab to handle version control of your work (should be in the upper right pane, otherwise you can find "Show Git" under the "View" menu). The most important commands are
