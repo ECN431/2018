@@ -1,0 +1,666 @@
+---
+title: "Lab 1"
+author: "Morten Sæthre"
+date: "January 15, 2018"
+output: 
+  html_notebook: 
+    highlight: tango
+    theme: flatly
+    toc: yes
+    toc_float: yes
+---
+
+## Intro
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. In a notebook, you can write text combined with code. Text is written in a simplified markup language known as [Markdown](https://en.wikipedia.org/wiki/Markdown). *R Markdown* is a particular version of Markdown.
+
+Code is entered within so-called *chunks*, which you will see many of in this document. You can execture "chunks" by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*.
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+
+## Setup
+First, we need to load the data. At the same time, we're going to load some packages that will be useful. In R, we load packages by `library(packagename)`. Loading "tidyverse" actually loads several packages that are very helpful for working with data in an efficient manner. In addition, we will load *Stargazer* for table output, *knitr* for creating dynamic reports, *lubridate* to work with date and time data, and *plm* for panel data econometrics.
+
+The data are in a comma-separated format (a very standard format for data files, due to its simplicity and not being tied to any given analysis software or system), which we can load with the function `read_csv` from *readr* (part of tidyverse).
+```{r, include = FALSE}
+library(tidyverse)
+library(stargazer)
+library(knitr)
+library(lubridate)
+library(plm)
+
+rossmann <- read_csv('rossmann.csv')
+```
+
+When we load data using tidyverse functions, we get a *tibble* which is quite similar to the traditional R dataframe with some convenient features. If we just output the tibble of the data in a notebook, we get a browseable view of them. Another way of inspecting the data in RStudio is to click on the corresponding name in the *Environment* tab (located in the upper right by default), which will open a new tab with a spreadsheet-like view.
+```{r}
+rossmann
+```
+
+
+## 1.
+There are several ways to tabulate the values of a variable in R. The function `count` from `dplyr` (part of the tidyverse) is particularly simple. Here it is illustrated with the use of a *pipe*. A pipe allows us to send the results of the previous expression to the next function. A pipe is written as `%>%`, and can be entered using the keyboard shortcut *Ctrl+Shift+M* in RStudio. The functions of the Tidyverse are designed to work well with pipes, such that the first argument is replaced by the previous result when included in the pipe.
+```{r}
+rossmann %>% count(storetype)
+```
+
+This is a quite trivial example of using pipes. In this case, we could just as well use the more traditional way of performing this operation:
+```{r}
+count(rossmann, storetype)
+```
+
+If one wants to comment on something here, one can note that stores
+of type B are seldom (roughly 1.5% of the sample), and that stores of type
+A are the most common (roughly 55% of the sample).
+
+## 2.
+To get a better scale on the numbers in tables, I rescale sales and customers to be interpreted in thousands, and distance to the nearest competitior to kilometers. Choice of scale depends on the particular application and is also a question of taste. The function `mutate` is used to add variables. Each new variable is separated by a comma, where we write "new variable name = expression", where the expression can involve most any function and computation, and conveniently refer to columns that are already in the data.
+```{r}
+rossmann <- rossmann %>% 
+  mutate(
+    salest = sales / 1000,
+    customerst = customers / 1000,
+    compdistkm = compdist / 1000
+)
+```
+
+We run regressions using the command `lm` (linear model). Note that you must explicitly tell what data to use, since R can hold an arbitrary amount of separate data sets in memory at a time (up to memory restrictions of your computer). The regression results can be stored in a variable - here `salereg_storetype`. Note that the storetype-variable is stored as text (character column). R will interpret this as a categorical variable and automatically run the regression including indicators for each unique value (excluding one baseline category). If we want to explicitly use a variable as a categorical (called *factor* in R), for instance if the categories are stored as numbers (which R would use as a continuous regressor by default), we can write `factor(storetype)` in the regression formula.
+```{r}
+salereg_storetype <- lm(salest ~ storetype, data = rossmann)
+```
+
+To output the regression results, we can use the standard function `summary`:
+```{r}
+summary(salereg_storetype)
+```
+Usually, we prefer a different way of formatting the regression tables, e.g., standard errors in parantheses below the coefficients. `stargazer` automates this for us. The option `type = 'text'` is appropriate when we want to view the results in the console or directly below the code chunk in the notebook. If we want to "knit" the document to another format (to make a report), we should choose the appropriate type for the format, for instance `type = 'html'` for html-documents that can be opened by a standard browser.
+```{r}
+stargazer(salereg_storetype, type = 'text')
+```
+
+The constant term is the average sales per day in thousands of Euros for the category left out
+(concept A), while the coefficient for each of the other categories is the
+difference in average sales to concept A. Adding the constant and the coefficient
+on a given store concept gives us the average sales per day for this concept.
+
+## 3.
+If you are uncertain about how to use a certain command, type the command and hit F1, or alternatively search for it in the *Help* tab on the right in RStudio.
+If you are uncertain about what command to use at all, try googling what you want to achieve.
+
+A very good graphing package in R is `ggplot2`. There is an immense number of possible figures one can make using the right commands. A figure is initialized by calling the command `ggplot`, telling it what data to use with the `data` argument. The mapping of data (what is on the x-axis, y-axis, whether we want to split by groups with differently colored lines etc.) can be supplied either directly to the initial `ggplot` command, or to each separate part of the figure The most standard way of supplying this mapping is with the ggplot function `aes` ("aesthetic"), which takes arguments such as `x` and `y`. We can then add plots and other styling using appropriate commands separated by `+`. Here, we use `stat_summary` to generate the average of the y-variable (being open) for each x-value, and tell it to display the result as a bar graph (`geom = 'bar'`). We need to supply the argument `fun.y`, which tells `stat_summary` what statistic to produce, for example `'median'`, `'sd'` (standard deviation) and similar. The commands `xlab` and `ylab` are used to change the labels on the respective axes.
+```{r}
+ggplot(data = rossmann, mapping = aes(x = storetype, y = open)) +
+  stat_summary(fun.y = 'mean', geom = 'bar') +
+  xlab('Store concept') + ylab("Share of days open")
+```
+
+In this case, we could equivalently have supplied the mapping of variables to axes using `aes` to the `stat_summary` command instad. Note also that `ggplot` expects the data as the first argument, such that we do not need to explicitly write `data =`:
+```{r}
+ggplot(rossmann) +
+  stat_summary(mapping = aes(x = storetype, y = open), fun.y = 'mean', geom = 'bar') +
+  xlab('Store concept') + ylab("Share of days open")
+```
+
+We see that stores of concept B are closed on fewer days than any of the other store concepts.
+
+## 4.
+Here, we add the indicator variable open to the regression formula. I also illustrate a customization of the stargazer table output by restricting the additional regression statistics to the number of observations and R^2 with the argument `keep.stat` which takes a vector of names of regression statistics to include in the table. In R, we create vectors with `c()` containing a comma-separated list of values. The full list of possible regression statistics can be found in the documentation for stargazer (type or select "stargazer" in the code chunk and hit F1, and find the explanation for the "keep.stat" argument).
+```{r}
+salereg_storetype_open <- lm(salest ~ storetype + open, data = rossmann)
+stargazer(salereg_storetype_open, type = 'text', keep.stat = c('n', 'rsq'))
+```
+
+The coefficients are due to "partialling out" the other variables. Since all
+variables are indicators/dummies, we can describe relatively precisely what is
+going on. The coefficient on a storetype is the average extra sales for a store of a given concept (compared to concept A), after 
+removing the differences in the frequency of being open due to storetype (if you
+think about how the residual will be formed, it will, for each store concept,
+subtract the share of days stores of the given concept is open).
+
+It might be most intuitive to think about what this means in the following way:
+If being open is related to higher sales (seems natural), and a store concept B tends to be open more (compared to the baseline store concept A),
+then this effect will be removed when we control for being open. Intuitively, we can think of this as removing part of concept B's sales that correlates with being open more often. We can verify
+this by comparing with the regression only including indicators for store concept, where we see that the
+coefficient is higher than in the full regression (note the use of stargazer to output the results of several regressions as separate columns in one table):
+```{r}
+stargazer(salereg_storetype, salereg_storetype_open, type = 'text', keep.stat = c('n', 'rsq'))
+```
+
+This is an example of the formula for omitted variable bias: There is a positive
+association between sales and being open, and there is a positive association
+between being open and being a store of concept B. Note that this doesn't require
+any causal mechanism being in place or knowing the direction of causality -- it's purely about correlations.
+Making any judgements on causality would require us
+to know more about exactly why a store is open or not on a certain day.
+
+Thinking of the regressions
+$$
+  y = \beta_S x_1 + \boldsymbol{w}' \boldsymbol{\lambda}_S + \epsilon_S
+$$
+and
+$$
+  y = \beta_L x_1 + \boldsymbol{w}' \boldsymbol{\lambda}_L + \gamma x_2  + \epsilon_L,
+$$
+where $x_1$ is the variable whose coefficient we'll focus on, $x_2$ is a variable that is omitted from the first regression, and $\boldsymbol{w}$ is a vector of controls ($\boldsymbol{w}' \boldsymbol{\lambda} = w_1 \lambda_1 + w_2 \lambda_2 + \cdots$). Note that we can let the constant term be included among these controls (one of the elements of $\boldsymbol{w}$ is 1, for instance $w_1=1$) We see that $\epsilon_S = \gamma x_2 + \epsilon_L$. The controls $\boldsymbol{w}$ are included just to illustrate that having other variables included does not fundamentally change how to reason about the relation between $\beta_S$ and $\beta_L$. It will be the case that the formula for omitted variable bias holds:
+$$
+  \beta_S = \beta_L + \gamma \cdot \delta_{21},
+$$
+where $\delta_{21}$ is the coefficient on $x_1$ in a regression of $x_2$ on $x_1$ *and* $\boldsymbol{w}$:
+$$
+  x_2 = \delta_{21} x_1 + \boldsymbol{w}' \boldsymbol{\lambda}_2 + \epsilon_2.
+$$
+I've used the subscript $O$ to denote coefficients and error terms in the regression of the *omitted variable* on the other variables. Note that we would expect $\boldsymbol{\lambda}_S$ to differ from $\boldsymbol{\lambda}_L$, following the same arguments as for $\beta$.
+
+We can verify this relation between coefficients by running the regression of the omitted variable (open) on storetype, and calculating the formula:
+```{r}
+omitreg <- lm(open ~ storetype, data = rossmann)
+
+stargazer(salereg_storetype_open, salereg_storetype, omitreg,
+          type = 'text', keep.stat = c('n', 'rsq'))
+```
+
+We can get the coefficients from a regression result with the following syntax:
+```{r}
+salereg_storetype_open$coefficients
+```
+which is a named vector in R. We can get single coefficients as follows:
+```{r}
+salereg_storetype_open$coefficients['storetypeB']
+
+salereg_storetype_open$coefficients['(Intercept)']
+```
+
+We can then calculate the formula as follows
+```{r}
+salereg_storetype_open$coefficients['storetypeB'] + salereg_storetype_open$coefficients['open'] * omitreg$coefficients['storetypeB'] 
+```
+Also display the coefficient from the short regression for comparison
+```{r}
+salereg_storetype$coefficients['storetypeB']
+```
+
+As we have set up this regression, the coefficients have a slightly strained
+interpretation. The coefficient on open can be interpreted as the average extra
+sales associated with being open for the average store (not dependent on concept),
+the constant term is the baseline sales associated with/"predicted for" 
+a store of type A when it is closed, while the coefficients on the indicators
+for the other store types are the difference to type A in baseline sales for
+these concepts. The reason why the coefficients might seem a bit strange,
+particularly compared with the ease of interpreting the next regression, is
+that we are "forcing" all stores to have the same shift in sales associated with
+being open.
+
+
+## 5.
+
+```{r}
+salereg_storetypexopen <- lm(salest ~ storetype * open, data = rossmann)
+stargazer(salereg_storetypexopen, type = 'text', digits = 2,
+          keep.stat = c('n', 'rsq'), dep.var.labels = 'Sales in 1000')
+```
+The constant term now has the interpretation of the sales for stores of type A
+when they are closed, and is zero. Similarly, the coefficients on each of the
+other store types is the average difference in sales compared to A-stores when they are
+closed, which are also zero, telling us that all stores have zero sales when
+closed (anything else would make us wonder about the data quality or definitions).
+
+The coefficient on open is now the average difference in sales for A-stores
+between being open and closed (which is equal to sales when they are open, since
+sales are zero when they are closed). Similarly, the interaction terms between
+store types and being open is the average difference in sales for a store of a
+given type and A-store conditional on being open.
+
+This simple interpretation, where reading the averages out from the
+coefficients is this straightforward, has to do with two things:
+1) there only being indicator variables as regressors, where we have included them all in addition to their
+interactions. This is called a saturated regression, where the coefficients can be interpreted as averages in and (average differences) between groups. This is the difference
+from the regression in 4.
+2) the baseline coefficients on store types all being zero. Without this last one,
+we would need to account for the interactions actually measuring the difference (between
+being open and closed) in difference (between the given store type and A-stores).
+This might sound like a mouthful, but it just means the following:
+Take the coefficients for type B (both by itself and interacted with open).
+The coefficient on open would have the same interpretation as above, such that
+the constant term plus this would be the sales for A when open. The coefficient
+on the interaction would be the extra difference in sales associated with being
+open for B-stores, compared to the difference for A-stores (difference in difference).
+However, the sales when closed for B-stores would be the constant plus the
+coefficient on the indicator for B-stores, while the average sales when open
+for B-stores would be the (the constant + storetypeB + open + storetypeB:open).
+We are going to talk more about how we can use this type of configuration
+in certain situations for estimating causal effects, so don't worry if it's
+not all clear.
+
+## 6.
+The following code demonstrates how we can put pipes to good use. First, we send the data (rossmann) to the `filter` function, which can select rows based on conditions. Here, the condition is that the value of the column open is 1 (note the use of "double equal" `==` for testing equality). Next, we send the result to `group_by`, which splits the data in parts based on one or more variables/expressions. Finally, we call `summarize` on the grouped data, which can generate summary statistics for each group. Here, we assign the average of sales in thousands to a column we call avg_open_sale.
+```{r}
+rossmann %>% filter(open == 1) %>% group_by(storetype) %>% summarize(avg_open_sale = mean(salest))
+```
+
+Inspecting the coefficients, we see that they correspond directly to the
+estimated coefficients (open for A, open + storetypeB for B, etc.)
+```{r}
+salereg_storetypexopen$coefficients['open'] + salereg_storetypexopen$coefficients['storetypeB:open']
+```
+
+
+
+## 7.
+
+```{r}
+salereg_ifopen <- lm(salest ~ storetype, data = filter(rossmann, open == 1))
+stargazer(salereg_ifopen, type = 'text', keep.stat = c('n', 'rsq'))
+```
+
+A lot of the variation in sales will be due to the sudden drop to zero sales
+every time the store is closed. The indicator for being open captures this
+very well on average, and thus explains a lot of variance. When restricting the
+sample to only days when stores are open, two things happen: There is less
+variation to explain, and we are basically disregarding the variation we
+can capture very well (with the indicator for open). We are thus taking a
+choice on what is actually interesting to explain. R^2^ can be very high
+because we are capturing a lot of uninteresting variation very well, or alternatively
+that we are capturing a lot of interesting stuff in an uninteresting way (a
+tongue-in-cheek example would be explaining a high temperature measurement
+with it being hot outside). In this case, it's not obvious that controlling for
+being open is really helpful, as we lack information on *why* stores are open or
+closed. If it's purely due to regulation, it might be fine, though we see that
+stores of concept B are open a larger share of the time. This means that we should
+be careful when interpreting, since it's probably not random (with respect to, say,
+sales) whether a store is of concept B or not.
+
+Dropping parts of the sample based on something we observe could introduce a
+type of omitted variable problem called sample selection bias (often when we talk
+about sample selection, it is when observing an outcome (or data at all) is
+due to unobservable factors that are correlated with regressors of interest,
+such that we have "sample selection bias"). This will be a problem if being
+open is correlated with a regressor of interest. In this case, it will be okay
+if being open is uncorrelated with the regressor(s) we are interested in.
+
+
+## 8.
+
+```{r}
+stargazer(as.data.frame(select(rossmann, salest, customerst)), type = 'text')
+```
+
+```{r}
+salesreg_comp <- lm(salest ~ competition, data = rossmann)
+salesreg_comp_open <- lm(salest ~ competition + open, data = rossmann)
+
+stargazer(salesreg_comp, salesreg_comp_open, type = 'text',
+          keep.stat = c('n', 'rsq'))
+```
+
+Probably the most relevant potential issue, as explained above, is that competition
+could be correlated with whether the store is open. Even though the coefficients
+are estimated to be different in the two specifications, this is not necessarily
+enough to state that there is a problem - it is obvious that the association
+with competition will be stronger when the store is open, since sales cannot
+respond when the store is closed (zero per definition), and in the first
+specification we are getting a weighted average. The coefficients in percentage
+of average sales is very similar between the full and restricted sample.
+
+The easiest way to test is to see if competition is associated with being open.
+```{r}
+openreg_comp <- lm(open ~ competition, data = rossmann)
+stargazer(openreg_comp, type = 'text', keep.stat = c('n', 'rsq'))
+```
+ The coefficient is small, and the standard error is relatively large (one
+ should note that we have many observations as well).
+ One should note that this is not a definite test, as it's not certain that
+ we can interpret the previous regression as causal (which becomes of importance
+ once we want to determine causality in the regression of sales on competition).
+ There could be unobserved factors determining being open which are associated
+ with competition and creates a bias making the coefficient estimated to zero. If
+ these factors are also affecting sales, we still have a problem.
+ 
+ The only way to be certain would be to find exogenous variation in competition,
+ ex. randomization (probably not feasible) or a suitable IV.
+
+## 9.
+```{r}
+salesreg_dist <- lm(salest ~ compdistkm, data = rossmann)
+stargazer(salesreg_dist, type = 'text', keep.stat = c('n', 'rsq'))
+```
+
+ Sales are lower when competition is further away. As long as we do not try to
+ interpret this as a causal effect, we are fine. Interpreted as a causal
+ effect, it seems counter to a reasonable expectation about competitors
+ stealing more sales the closer they are. However, this is not a ceteris paribus
+ case, and the likely explanation involves selection/omitted variables.
+ A potential reason is that when competitors are further away, there are fewer
+ customers nearby/population density is low, making entry relatively
+ unattractive. Another reason could be that the area is relatively poor, making
+ people purchase less. It could also be that there is a lack of suitable business
+ locations in the area, for example no spots where customers would frequently
+ visit to make their purchases (e.g., no well-defined "center" area).
+ 
+ Without more data/information on the particular areas, we cannot really pin down which
+ of these -- or other possible explanations -- is the right one. Also note that
+ I ruled out closer competition causing higher sales on a priori grounds, and
+ not because of the data actually saying this. Can you explain why this could
+ actually would be the case, or think of a situation/model where it makes sense?
+
+## 10.
+
+```{r}
+
+ggplot(rossmann, mapping = aes(x = year(date))) +
+  stat_summary(aes(y = competition), fun.y = 'mean', geom = 'path') +
+  labs(y = 'Share facing competition', x = 'Year')
+```
+```{r}
+ggplot(rossmann, mapping = aes(x = year(date))) + 
+  stat_summary(aes(y = salest), fun.y = 'mean', geom = 'path') +
+  labs(y = 'Average sales', x = 'Year')
+```
+
+The following code will create a table with yearly average of sales in thousand and competition.
+```{r}
+rossmann %>% group_by(year(date)) %>% 
+  summarize(Competition = mean(competition), Sales = mean(salest))
+```
+To make the table look better, we can rename the slightly awkward column "year(date)" using the function `rename` as follows:
+```{r}
+rossmann %>% group_by(year(date)) %>% 
+  summarize(Competition = mean(competition), Sales = mean(salest)) %>% 
+  rename(year = 'year(date)')
+```
+To put both graphs in one figure with separate panels (note that we can "pipe" data to ggplot, which will then take the place of the first `data` argument):
+```{r}
+rossmann %>% group_by(year(date)) %>% 
+  summarize(Competition = mean(competition), Sales = mean(salest)) %>%
+  rename(year = 'year(date)') %>% 
+  gather(key = 'variable', value = 'value', -year) %>% 
+  ggplot(aes(x = year, y = value)) +
+  geom_path() + facet_grid(variable ~ ., scales = 'free_y') + 
+  scale_x_continuous(breaks = c(2013, 2014, 2015)) +
+  labs(x = 'Year', y = '')
+```
+
+## 11.
+Here, we use the command `plm` to perform panel regression. The argument `index` takes a vector with the names of the variables that contain the id for observation unit and time information (here *store* and *date*). The argument `model` is used to specify the type of model to fit. Here we use `'within'` for a *within regression*, also known as the (individual) *fixed effects* model. Stargazer can display the results from panel regressions as well.
+```{r}
+salesreg_fe_comp <- plm(salest ~ competition,
+                             data = rossmann, index = c('store', 'date'), model = 'within')
+
+stargazer(salesreg_comp, salesreg_fe_comp, type = 'text',
+          column.labels = c('OLS', 'FE'), model.numbers = FALSE, model.names = FALSE,
+          keep.stat = c('n', 'rsq'))
+```
+There are a couple of ways to think about the variation used for estimating the
+coefficient with fixed effects (FE). If you remember your FE basics, it basically
+controls for anything which is fixed for the observation unit (stores) over time.
+This means that there will be perfect collinearity between the fixed effects and
+any observed variable which is constant for store over time (such as store type),
+but also that it will control out any fixed factors that are unobserved as well.
+This allows us to mitigate selection due to fixed factors (one could think about
+location, size of the store, or management).
+If we think about the partialling out, it basically runs a regression on an
+indicator for each store on each of the included variables, which is competition
+here. This means that, for stores which either have or don't have competition
+throughout the sample, the indicator for competition will be subsumed by the
+fixed effect for these stores. This leaves in competition only the variation
+for the stores where it changes over time, and thus not perfectly collinear with
+the fixed effect. This gives us the interpretation of only using the "within-
+variation", which is taken to mean the variation after we've subtracted the
+average for each store (this is sometimes referred to as "centering").
+
+What the coefficient on competition is measuring now, is basically the average
+difference in sales when there is competition compared to when there is no 
+competition for stores where there is a change in competition, adjusted for the
+fact that some stores face competition more (for a longer period) than others.
+On the last point: If stores that faced competition for a longer period also
+tend to have higher sales, this will tend to decrease the coefficient on
+competition when we include store-fixed effects, as there was a positive
+correlation which we are now partialling out (ref. the omitted variable bias
+formula).
+
+Adding indicators for each year to the regressions:
+```{r}
+salesreg_comp_year <- lm(salest ~ competition + factor(year(date)), data = rossmann)
+
+salesreg_fe_comp_year <- plm(salest ~ competition + factor(year(date)),
+                             data = rossmann, index = c('store', 'date'), model = 'within')
+
+stargazer(salesreg_comp, salesreg_fe_comp, salesreg_comp_year, salesreg_fe_comp_year, type = 'text',
+          column.labels = c('OLS', 'FE', 'OLS', 'FE'), model.names = FALSE,
+          keep.stat = c('n', 'rsq'))
+```
+The intuition from the previous point can be seen here: Since both sales and competition are increasing over time, competition will pick up this effect. When we control for time, we "partial out" this channel of correlation between sales and competition. Still, we need to think carefully about what we are doing; however, it seems reasonable in this case that the coinciding increase in sales and competition over time is spurious or due to common causes, and not a causal relationship between them.
+
+Since the fixed effect can only take care of unobservables that are constant
+over time, any time-varying unobservables (either on the aggregate or within unit)
+can still invalidate causal interpretation, insofar as they are correlated with
+competition. Ex.: the location is becoming more attractive, thus attracting
+entry, or some stores experiencing a worsening in their internal operations/management,
+making it more viable for a competitor to profitably enter the market (note that
+we would expect these to work in different directions [can you explain why?]).
+
+## 12.
+```{r}
+openreg_fe_comp <- plm(open ~ competition, data = rossmann, index = c('store', 'date'), model = 'within')
+
+stargazer(openreg_comp, openreg_fe_comp, type = 'text',
+          column.labels = c('OLS', 'FE'), model.names = FALSE,
+          keep.stat = c('n', 'rsq'))
+```
+
+The coefficient on competition is very small, both if we include or exclude
+store-fixed effects. There is no evidence here that competition is correlated
+with being open. From a pragmatic perspective, it seems that we learn something
+at least closer to what we want: Stores that experience entry of a competitor
+does not seem to increase or decrease the frequency of being open.
+
+An example of what could cause problems here: There was some indication of selection on stores that have more competition being
+open more (maybe due to central location), while the entry of a competitor
+actually leads to them keeping open less, such that the net effect turned out
+to be close to zero.
+There could still be an issue with unobserved factors that varies over time
+creating a similar problem to the one described in the preceding example,
+so we cannot be sure without having exogenous variation in competition.
+
+## 13.
+Table:
+```{r}
+rossmann %>% group_by(storetype) %>% 
+  summarize(Chain = mean(promo), Store = mean(promo2))
+```
+
+To make a bar plot with separate bars for each type of promo with ggplot simple, we first calculate the average of promo and promo2 by store type, and then turn the variable names into a column using `gather`, while the values of the two columns are stacked in a new column which we just call *value* (the argument `value` sets what the name of the value-column should be). Feel free to look at the result of this operation. The last argument of gather is a list of variables to "gather" in this way, where `-storetype` means that it should gather all columns *except* storetype (could equivalently write `gather(key = Promotion, value = value, Chain, Store)`). We then tell ggplot that we want to have storetype on the x-axis, the average of the promotion variables on the y-axis (remember that the promotion averages have been stacked in the column *value*), and that we want to separately show the results by *Promotion* type with different "fill" (will for instance give different color to bars). The plot `geom_col` tells ggplot that we want bars where the height is determined by the value of the y-variable. The argument `position = 'dodge'` tells ggplot to put the bars side by side (instead of stacked, which is the default).
+```{r}
+rossmann %>% group_by(storetype) %>% 
+  summarize(Chain = mean(promo), Store = mean(promo2)) %>% 
+  gather(key = Promotion, value = value, -storetype) %>% 
+  ggplot(mapping = aes(x = storetype, y = value, fill = Promotion)) +
+  geom_col(position = 'dodge') +
+  labs(x = 'Store concept', y = 'Share of days')
+```
+
+We see that the chain-specific promotion (promo) is as good as equal for all of the stores,
+which is to be expected since it is coordinated across stores (can you guess why it's not exactly equal?).
+The store-specific promotion is not necessarily coordinated over time,
+and we see that it is less common for stores of type B, while
+relatively more common for C and D, compared to A.
+
+## 14.
+Check whether competition is correlated with promotion, controlling for store type
+```{r}
+promoreg_comp <- lm(promo ~ competition + storetype, data = rossmann)
+promo2reg_comp <- lm(promo2 ~ competition + storetype, data = rossmann)
+
+stargazer(promoreg_comp, promo2reg_comp, type = 'text', keep.stat = c('n', 'rsq'))
+```
+
+Promotion and competition seems to be correlated. It seems reasonable to
+control for it, though this does not solve the problem of endogeneity, i.e.,
+that competition might be correlated with unobserved factors affecting sale,
+though it will take care of promotion not picking up the effect of competition.
+In a larger analysis, we would have spent more effort in trying to understand
+how and why competition and promotions are related. If we did some more checks,
+we would see that both are increasing over time, so we could be picking
+up some increases in sales over time due to other factors (though you can
+ignore this here).
+
+Regression with and without store-fixed effects:
+```{r}
+salesreg_promo <- lm(salest ~ (promo + promo2 + competition) * storetype, data = rossmann)
+salesreg_fe_promo <- plm(salest ~ (promo + promo2 + competition) * storetype,
+                         data = rossmann, index = c('store', 'date'), model = 'within')
+
+stargazer(salesreg_promo, salesreg_fe_promo, type = 'text', keep.stat = c('n', 'rsq'),
+          column.labels = c('OLS', 'FE'), model.names = FALSE)
+```
+
+We see that the coefficients on chain promo is basically unaffected by fixed effects
+(inclusion of indicators for store). This is not very surprising, since it doesn't
+have any variation between stores, and therefore doesn't correlate with the
+store fixed effects (it could change because the other regressors are affected
+by inclusion of fixed effects, however).
+
+The coefficients on store promo changes dramatically, going from negative
+to positive. This means that store promotion more frequently occurs for 
+stores that tend to have lower sales than stores with less frequent promotion.
+To see this, note that the fixed effect estimator includes an indicator for
+each unique store, and interpret the findings in light of the omitted variable
+bias formula: Since the coefficient is higher when we include the fixed effects,
+it means that there is a negative correlation between promotion and the store
+fixed effects (which can be thought of as the average sale for each store,
+after controlling for the other regressors). This is often called selection bias.
+We still cannot be sure that the effect of promotion is causal, since it is
+also possible that promotions coincide with periods where demand is unusually
+high (for example times leading up to holidays, or when large local events
+happen), though the positive association we find after including fixed effects
+makes more sense and is at least suggestive that it might increase demand.
+Comparing the effect for the separate store types, it seems that store promotion
+is associated with a higher increase in sales for other types than A,
+particularly type B (even if we take into account that B-stores have much higher
+sales than A-stores on average). You should make sure you understand why we can fit
+the coefficients on the interactions with store types, while the coefficients
+on the indicators themselves are dropped due to collinearity.
+
+The coefficients on competition also change a lot with fixed effects. The
+change from positive to negative coefficient for stores of type A suggests
+a positive selection on stores that face competition (a phrase meaning that
+stores with competition tends to have higher sales than stores without).
+For stores of type B, the picture is completely reverse - going from negative
+to positive (sum up the baseline and the interaction effect in both cases to
+see this). This suggests that stores of type B facing competition are negatively
+selected. The positive association with fixed effects tells us that stores of
+type B that go from no competition to having competition experiences higher
+sales afterwards (remember the within-variation interpretation with fixed
+effects). A possible explanation for this is that, for B-stores, competition
+is associated with locations that have increasing demand over time, which
+will then be picked up by the competition indicator changing from 0 to 1 at
+some point in the sample.
+
+The general obstacle to causal interpretation is still present: we cannot be sure
+that promotion and competition is not correlated with unobserved factors
+determining sales. When we included fixed effects, we know that we have "partialled
+out" any factors being fixed over time for each store, though time-varying
+effects could still be problematic. One helpful option is to include time-fixed
+effects (for example per week, month, year, or even day), which would partial
+out any time-varying factors which are common across stores, though we would
+still have a potential issue due to within-store time-varying factors. We would
+need to understand *why* some stores get competition (what determines entry of
+competition?), runs promotions and how they are related (does competition make
+price rebates more likely?).
+
+
+## 15.
+### a
+A good alternative is to use stargazer to create descriptive statistics tables:
+```{r}
+descvars <- c('salest', 'customerst', 'open', 'promo', 'promo2', 'competition')
+descnames = c('Sales in 1000', 'Customers in 1000', 'Store is open', 'Chain promotion',
+              'Store promotion', 'Competitor nearby')
+stargazer(
+  as.data.frame(rossmann[descvars]),
+  covariate.labels = descnames,
+  type = 'text',
+  digits = 2
+)
+```
+
+
+### b
+We can obtain these measures by first calculating the minimum and maximum value of *competition* for each store. Stores that have maximum value of 0 never have competition, while stores that have a minimum value of 1 always have competition.
+```{r}
+store_maxmincomp <- rossmann %>% group_by(store) %>%
+  summarize(mincomp = min(competition), maxcomp = max(competition))
+
+store_maxmincomp %>%
+  summarize(
+    nevercomp = sum(maxcomp == 0),
+    alwayscomp = sum(mincomp == 1),
+    getcomp = sum(mincomp == 0 & maxcomp == 1)
+  )
+```
+
+The interpretation that *competition* taking values both 0 and 1 within a store during the sample means that competition entered, hinges on an assumption that no competitors actually exited. We can check the time series of *competition* within each store, and see that the value is never *reduced*. Making sure the data is sorted by store and date using `arrange`, we then add a variable equal to the difference between *competition* and it's lagged variable within store (`group_by` and then using `lag` in `mutate`). Then we can count the number of unique values of this variable, and we see that there are no negative values, and 188 cases where competition entered (corresponding to the 188 stores above). The missing (`NA`) values are due to the lagged value being missing for the first observation of a store.
+```{r}
+rossmann <- rossmann %>% arrange(store, date)
+rossmann <- rossmann %>% group_by(store) %>% mutate(changecomp = competition - lag(competition))
+
+rossmann %>% group_by(changecomp) %>% count()
+```
+
+
+### c
+First, we need to know how to create a variable for the monthly date from a full date (containing both year, month and day). Using the function `floor_date` from the package lubridate, this is simple. The first argument of this function is the dates, while the second is a string specifying the time unit that the date will be rounded (down) to. Here, the monthly date will be inserted as a new column prior to plotting, though we could just use `floor_date(date, 'month')` directly with ggplot as the x-axis variable.
+```{r}
+rossmann <- rossmann %>% mutate(monthdate = floor_date(date, 'month'))
+```
+
+We can then use ggplot to plot the number of changes in competition by *monthdate*. I first use `filter` to remove the rows where change in competition is missing due to the lagged value being missing for the first observation of a store. Note that `!` means "not", such that `!is.na` reads "not missing", since `is.na` is true for the elements that are missing. I tell `stats_summary` to sum the y-variable (change in competition) for each year-month, and display the results as bars.
+```{r}
+rossmann %>% filter(!is.na(changecomp)) %>%
+  ggplot(mapping = aes(x = monthdate, y = changecomp)) +
+  stat_summary(geom = 'bar', fun.y = 'sum') +
+  labs(x = '', y = 'Competitor entry')
+```
+
+
+### d
+We must first get the date of entry for stores affected. We can select the part of the dataset where competition changes, using `filter`, then select only the store ID and date variables, renaming the date variable to *entrydate*. Then we can join the entrydate onto the original data with the function `inner_join`, using store ID as the key, selecting only the stores where entry date is not missing (the stores that experience entry). Note that `inner_join` only returns the observations where there is a match in both data set, i.e., that the store ID is preset in both. This means that we keep only the stores that are present in the entry date data, which are the ones that experience entry during the sample.
+```{r}
+entrydate <- rossmann %>%
+  filter(changecomp == 1) %>%
+  select(store, date) %>%
+  rename(entrydate = date)
+
+entrydata <- rossmann %>% select(store, salest, date, competition, changecomp) %>%
+  inner_join(entrydate, by = 'store')
+```
+
+We can then add a column of the difference in days between the date and entry date, as well as the minimum and maximum of this column for each store (gives the number of days before and after entry we observe for each store in the data), such that we can ensure that we observe all stores for the same amount of time (to make sure we are comparing the same stores over time).
+```{r}
+entrydata <- entrydata %>% mutate(t = date - entrydate)
+entrydata <- entrydata %>% group_by(store) %>% mutate(mint = min(t), maxt = max(t))
+```
+
+Selecting only the stores that are observable at least 90 days prior to and 90 days after entry, and restricting the window to exactly 90 days before up to 90 days after entry, we can plot the average sales across stores in each day relative to entry. This features a lot of noise, since stores might be closed on different times, have different sizes, etc. To help us interpret the graphical results, we can also add a plot of average sales within bins along the x-axis using `stat_summary_bin`, such that we average over longer periods of time. By specifying `fun.data = mean_cl_boot` (requires that the package `Hmisc` is installed - an alternative is `mean_se`), `stat_summary_bin` calculates both the average y-value within each bin as well as a 95% confidence interval for the estimate. The argument `binwidth` specifies how large the bins are in terms of the x-values (here: 10 days).
+```{r}
+entrydata %>% filter(mint <= -90, maxt >= 90, t >= -90, t < 90) %>% 
+  ggplot(aes(x = t, y = salest)) +
+  scale_x_continuous(breaks = seq(-90, 90, 10)) +
+  stat_summary(geom = 'path', fun.y = 'mean') +
+  stat_summary_bin(fun.data = 'mean_cl_boot', binwidth = 10, color = 'dodgerblue') +
+  labs(x = 'Days relative to entry', y = 'Sales in thousand')
+```
+
+To understand the importance of restricting the sample to where we observe
+all stores, you can run the following and interpret what is happening:
+(this will be useful for understanding the difference between these estimates
+and the fixed effects estimates where we included all observations for the
+stores facing competition)
+```{r}
+entrydata %>%
+  ggplot(aes(x = t, y = salest)) +
+  stat_summary(geom = 'path', fun.y = 'mean') +
+  labs(x = 'Days relative to entry', y = 'Sales in thousand')
+```
+
