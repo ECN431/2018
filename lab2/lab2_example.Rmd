@@ -1,0 +1,873 @@
+---
+title: "Lab 2 Examples"
+date: "February 2, 2018"
+output:
+  html_notebook:
+    highlight: tango
+    theme: flatly
+    toc: yes
+    toc_float: yes
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Setup 
+
+We begin by loading the packages we will be using.
+
+
+```{r,message=FALSE}
+library(tidyverse)
+library(haven)
+library(stargazer)
+library(lubridate)
+library(AER)
+```
+
+## Warming up at the Fulton fish market
+
+We now proceed by loading the dataset using the `read_dta` function from the haven package (part of the tidyverse).
+
+
+```{r}
+fishmarket <- read_dta("fishmarket.dta")
+```
+
+### Present and understand your data
+
+#### 1.
+
+As in the previous lab, we can make a table of summary statistics using the stargazer package. Note that we can use the option `covariate.labels` to change the displayed name of variables in a Stargazer table.
+
+```{r}
+summarydata <- fishmarket %>% 
+    select(price,quan,stormy,mixed)
+
+stargazer(as.data.frame(summarydata),
+          type = "text",
+          covariate.labels = c("Price",
+                               "Quantity",
+                               "Stormy Weather",
+                               "Mixed Weather"))
+```
+
+
+#### 2.
+
+The date variable is not in a format we want to work with at the moment, so we need to fix that. THe date variable is currently in the format year, month, day (numeric with YYMMDD), so we can format it using the function `ymd` from the lubridate package (we just replace the current date variable with the new one as we have no use for the old one).
+
+```{r}
+fishmarket <- fishmarket %>% 
+    mutate(date=ymd(date))
+```
+
+
+Now we can plot the quantity sold per day. A step-plot (`geom_step`) works well in this instance, making apparent the changes from date to date. In some instances, we might want to specify how the markers on the axes should be formatted. `ggplot` will usually do something sensible, but sometimes we can improve the figure by providing more detailed instructions. Here, we specify that the x-axis should be formatted as a date (`scale_x_date`) with a monthly resolution.
+
+```{r}
+ggplot(data=fishmarket,aes(x=date,y=quan)) +
+    geom_step() +
+    scale_x_date(date_breaks = "1 month") +
+    labs(x="Date",y="Quantity Sold (pounds)")
+```
+
+Also plot the price per unit each day by filling in:
+```{r}
+ggplot(data=fishmarket,aes(x=date,y=price)) +
+```
+
+It might be easier to see how prices and quantities vary together if we place the two plots in one figure, though this requires a bit more effort to get to work "straight out of the box":
+```{r, warning=FALSE}
+fishmarket %>% select(date, price, quan) %>% 
+  gather(key = 'variable', value = 'value', -date) %>% 
+  ggplot(aes(x=date, y=value)) +
+  geom_step() + 
+  facet_grid(variable ~ ., scales = 'free_y',
+             labeller = as_labeller(c('price'='Price Per Pound (USD)', 'quan'='Quantity Sold (pounds)'))
+             ) +
+  scale_x_date(date_breaks = "1 month") +
+  labs(x = 'Date', y = '')
+```
+
+
+#### 3.
+
+Regress quantity on price and make a regression table using stargazer. Use the options `covariate.labels` to change the display of variable names in the table. You can also use `dep.var.labels` to change the header over each column.
+```{r}
+quan_price_ols <- lm(quan ~ price,
+                     data=fishmarket)
+
+stargazer(quan_price_ols,
+          type="text",
+          covariate.labels = c("Price"),
+          dep.var.labels = c("Quantity Sold"),
+          keep.stat = c("n","rsq"))
+```
+
+
+The results are probably easier to read if we scale quantity to 1000 pounds and set the number of digits after decimal to two:
+```{r}
+quant_price_ols <- lm(quan / 1000 ~ price,
+                      data=fishmarket)
+
+stargazer(quant_price_ols,
+          type="text",
+          digits = 2,
+          covariate.labels = c("Price"),
+          dep.var.labels = c("Quantity Sold (1000 pounds)"),
+          keep.stat = c("n","rsq"))
+```
+
+Note that we can also create a table which looks nicer in the html output of the notebook by specifying the option `results='asis'` for the chunk (necessary for the final output to display the table correctly) and `type=html` for stargazer, though it becomes hard to see the results when working in the raw notebook directly (optionally, one can also set the option `style` to give the table a particular format, as shown here). You need to save the file, click *Preview* and choose *Preview Notebook* to see how the final result looks like in the Viewer.
+```{r, results='asis'}
+stargazer(quant_price_ols,
+          type="html",
+          style='aer',
+          digits = 2,
+          covariate.labels = c("Price"),
+          dep.var.labels = c("Quantity Sold (1000 pounds)"),
+          keep.stat = c("n","rsq"))
+```
+
+
+### Assessing and understanding IV
+
+#### 4.
+
+To make this plot, we have to generate a variable showing if the weather is stormy, mixed or clear at sea.
+
+```{r}
+fishmarket <- fishmarket %>% 
+    mutate(weather=ifelse(stormy==1,"High wind and waves",
+                          ifelse(mixed==1,"Mixed wind and waves",
+                                 NA)))
+```
+
+We can now make the plot. This involves invoking the `fill` aesthetic of ggplot, which will make columns of separate color for the weather-type. The option `alpha` tells ggplot how opaque or transparent we want the element to be, where a lower value means more transparent, which can help with making other features easier to see (like the price series here). We filter out the `NA`-values from the variable *weather* using the `filter`-function (from the tidyverse package dplyr), so that these do not feature with a fill-color or in the legend of the plot. `scale_fill_brewer` allows us to choose the color scheme for the `fill`-aesthetic that we've chosen, which we optionally can provide with a name, otherwise the default is the variable name (weather, with lower-case initial). 
+
+```{r}
+ggplot(data=fishmarket,aes(x=date,y=price)) +
+    geom_col(data=filter(fishmarket,!is.na(weather)),
+             aes(y=Inf,fill=weather),
+             alpha=0.3) +
+    geom_step() +
+    scale_fill_brewer(name = "Weather", palette = "Set1") +
+    scale_x_date(date_breaks = "1 month") +
+    labs(x="Date",y="Price Per Pound (USD)") +
+    theme(legend.position = "bottom",
+          legend.direction = "vertical",
+          legend.title.align = 0.5)
+```
+
+
+#### 5.
+
+Fill in to estimate the relevant regression equations and present them in a table using stargazer (tip: use quantity in thousands.
+
+```{r}
+price_stormy_ols <- 
+
+quan_stormy_ols <- 
+
+stargazer(price_stormy_ols,quan_stormy_ols,
+          type="text",
+          covariate.labels = c("Stormy Weather"),
+          dep.var.labels = c("Price","Quantity"),
+          keep.stat = c("n","rsq"),
+          digits=3)
+```
+
+
+
+
+
+#### 6.
+
+We begin by estimating the instrumental variables equation as well as the first stage equation. Note the use of `I()` in the formula for the IV regression. Previously, we've just written `quan / 1000` whenever we wanted to scale quantity to thousands, but not all regression functions directly accepts such expressions modifying the values of a variable. The special function `I()` solves this, such that we can do calculations with a variable for most regression functions without having to create and store new variables for every instance (should be used for instance when we want to include squared terms, e.g., `I(x^2)`). Read about the syntax for `ivreg` using Help in RStudio. Fill in the regression for the first-stage.
+
+```{r, results='asis'}
+quan_price_iv <- ivreg(I(quan/1000) ~ price | stormy,
+                       data=fishmarket)
+
+quan_price_first <- 
+
+stargazer(quan_price_first,quan_price_iv,
+          type="html",
+          style="aer",
+          covariate.labels = c("Stormy Weather","Price"),
+          dep.var.labels = c("Price","Quantity"),
+          column.labels = c("(First Stage)","(Second Stage)"),
+          model.names = FALSE,
+          digits = 2,
+          notes = ("Price was instrumented for using an indicator for stormy weather"),
+          notes.align = "l",
+          keep.stat = c("n","rsq","F"))
+```
+
+
+
+#### 7.
+
+
+
+### Estimating supply and demand
+
+#### 8. Extra:
+
+##### (a)
+
+We begin by generating the indicator variable.
+
+```{r}
+fishmarket <- fishmarket %>% 
+    mutate(lowdemand=factor(tue + wed))
+```
+
+Perform the necessary regressions
+
+
+
+##### (b)
+
+Estimate the first and second stage equations.
+
+
+
+##### (c)
+
+We want to extract the supply and demand equations from the estimated results. We begin with supply. Note that we need to refer to the quantity variable with the expression syntax used in the formula (also note that it would not have been wrong to rescale the quantity variable in the dataset for the whole exercise instead).
+
+```{r}
+price_quan_iv <- ivreg(price ~ I(quan / 1000) + stormy | lowdemand + stormy,
+                       data=fishmarket)
+
+intercept_supply <- price_quan_iv$coefficients["(Intercept)"]
+slope_supply <- price_quan_iv$coefficients["I(quan/1000)"]
+shift_supply <- price_quan_iv$coefficients["stormy"]
+
+```
+
+We can now generate the supply curves for stormy and non-stormy days as functions (learning to write your own functions can be very useful in R):
+
+```{r}
+supplycurve_nonstormy <- function(x) {
+    intercept_supply + slope_supply*x
+} 
+supplycurve_stormy <- function(x) {
+    intercept_supply + shift_supply + slope_supply*x
+    
+}
+```
+
+
+Fill in the rest for demand regression:
+```{r}
+quan_price_lowdemand_iv <- ivreg(I(quan / 1000) ~ )
+
+intercept_demand <- quan_price_lowdemand_iv$coefficients["(Intercept)"]
+slope_demand <- 
+shift_demand <- 
+
+```
+
+To make the plotting easier, we can solve the demand functions for price (since the plotting function we'll be using assumes that the function returns values for the vertical axis, given a value on the horizontal axis).
+
+For high demand days:
+$$\text{Demand}_{\text{high}} = \text{Intercept} + \text{Slope}\cdot\text{Price}  \\ 
+\text{Price} = -\frac{\text{Intercept}}{\text{Slope}} + \frac{1}{\text{Slope}}\cdot\text{Demand}_{\text{high}} $$
+
+For low demand days:
+$$\text{Demand}_{\text{low}} = \text{Intercept} + \text{Demand Shift} + \text{Slope}\cdot\text{Price}  \\ 
+\text{Price} = -\frac{\text{Intercept} + \text{Demand Shift}}{\text{Slope}} + \frac{1}{\text{Slope}}\cdot\text{Demand}_{\text{low}} $$
+
+(These expressions are entered in LaTeX, and will be displayed as math in the final document. Look at the preview or the html file to see the result.)
+
+Now, create the (inverted) demand functions
+
+```{r}
+demandcurve_high <- 
+
+demandcurve_low <- 
+```
+
+We can then plot the functions. With `stat_function`, we can plot user-defined functions. Look up the documentation for the other features used in this plot (use Help) to learn how they work.
+
+```{r,warning=FALSE}
+ggplot(data=data.frame(x=c(0,15),y=c(0,2)),aes(x=x,y=y)) +
+    stat_function(fun=supplycurve_nonstormy,
+                  aes(color="Supply",linetype="High")) +
+    stat_function(fun=supplycurve_stormy,
+                  aes(color="Supply",linetype="Low")) +
+    stat_function(fun=demandcurve_high,
+                  aes(color="Demand",linetype="High")) +
+    stat_function(fun=demandcurve_low,
+                  aes(color="Demand",linetype="Low")) +
+    scale_y_continuous(limits=c(0,2)) +
+    scale_color_brewer(name="Curve",palette = "Set1") +
+    scale_linetype_discrete(name="Level") +
+    scale_x_continuous(breaks=seq(0,15,5)) +
+    labs(x="Quantity (1000 pounds)",y="Price (USD)")
+```
+Now that we are done with the fish market data, we can remove all the objects we have in memory.
+
+```{r}
+rm(list=ls())
+```
+
+
+## Nord pool spot: The electricity wholesale market
+
+Load the Nordpool data
+
+```{r,message=FALSE}
+elmarket <- 
+```
+
+### Data Wrangling
+
+#### 1.
+
+We need to load the population datasets.
+
+```{r,message=FALSE}
+norpop <- read_csv("norpop.csv",col_names = FALSE)
+colnames(norpop) <- c("city","population")
+
+
+swepop <- read_csv("swepop.csv",col_names = FALSE)
+colnames(swepop) <- c("city","population")
+```
+
+```{r}
+tempdata <- elmarket %>%
+    select(-c(price,volume,hydrores)) %>% 
+    gather(key="city",value="temperature",-time)
+```
+
+```{r}
+nortempdata <- inner_join(x=tempdata,y=norpop,by=c("city"="city"))
+
+nortempdata <- nortempdata %>% 
+    group_by(time) %>% 
+    summarize(nortemp=weighted.mean(temperature,w=population))
+
+swetempdata <- inner_join(x=tempdata,y=swepop,by=c("city"="city"))
+
+swetempdata <- swetempdata %>% 
+    group_by(time) %>% 
+    summarize(swetemp=weighted.mean(temperature,w=population))
+
+elmarket <- left_join(x=elmarket,y=nortempdata,
+                      by=c("time"="time"))
+
+elmarket <- left_join(x=elmarket,y=swetempdata,
+                      by=c("time"="time"))
+
+rm(tempdata,norpop,nortempdata,swepop,swetempdata)
+
+```
+
+
+### Present and understand your data
+
+#### 2.
+
+We first make descriptive statistics for price, volume and magazine capacity. To make volume "better" scaled, you can rescale it from MWh to GWh by first dividing by 1000:
+```{r}
+elmarket <- elmarket %>% mutate(volume = volume / 1000)
+```
+
+
+```{r}
+summarydata <- elmarket %>% 
+    select(price,volume,hydrores)
+
+stargazer(as.data.frame(summarydata),
+          type="text",
+          digits = 2,
+          covariate.labels = c("Price (EUR/MWh)","Volume (GWh)","Magazine Capacity (TWh)"))
+
+rm(summarydata)
+```
+
+We now make tables for temperatures in the Norwegian and Swedish areas. Here we utilize the fact that the Norwegian and Swedish temperatures are next to each other in the dataset, note that this way of doing it would not work if we reordered the variables. We begin with the Norwegian temperatures.
+
+```{r}
+nortemps <- elmarket %>% 
+    select(Fredrikstad:Tromso) 
+
+stargazer(as.data.frame(nortemps),
+          type="text",
+          digits=1)
+
+rm(nortemps)
+```
+And now Sweden:
+
+```{r}
+swetemps <- elmarket %>% 
+    select(Goteborg:Uppsala) 
+
+stargazer(as.data.frame(swetemps),
+          type="text",
+          digits=1)
+
+rm(swetemps)
+```
+
+#### 3.
+
+We begin by calculating the values we will be plotting. Fill in the missing parts in `summarize` below:
+
+```{r}
+weekdata <- elmarket %>% 
+    mutate(week=floor_date(time,
+                           unit = "1 week",
+                           week_start = 1)) %>% 
+    group_by(week) %>% 
+    summarize(volume=,
+              price=weighted.mean(price,w=volume),
+              nortemp=,
+              swetemp=,
+              hydrores=)
+```
+
+We can now plot average volume and average volume weighted price. Because these both have to do with volume we combine them in one plot. Those of you familiar with Stata will find that having a separate y axis is more complicated in ggplot2 because Hadley Wickham (a key developer of the tidyverse) thinks they are problematic.
+
+```{r}
+ggplot(data=weekdata,aes(x=week)) +
+    geom_line(aes(y=price,color="Volume Weighted Price")) +
+    geom_line(aes(y=volume,color="Volume")) +
+    scale_y_continuous(sec.axis = dup_axis(name="Volume (GWh)")) +
+    scale_color_brewer(name="Variable",
+                       palette = "Set1",
+                       guide = guide_legend(ncol=2)) +
+    labs(x="Weekly Date",y="Volume Weighted Price (EUR/MWh)") +
+    theme(axis.title.y.right = element_text(angle=90),
+          legend.position = "bottom",
+          legend.direction = "vertical",
+          legend.title.align = 0.5)
+```
+
+We proceed by plotting the average temperatures in Norway and Sweden.
+
+```{r}
+
+weekdata %>% 
+    select(week,"Norway" = nortemp,"Sweden"=swetemp) %>% 
+    gather(key="Country",value="Temperature",-week) %>% 
+    ggplot(aes(x=week,y=Temperature,color=Country,linetype=Country)) +
+    geom_line() +
+    scale_color_brewer(palette = "Set1") +
+    labs(x="Weekly Date")
+
+```
+
+Also plot the hydro reservoir capacity by filling in. To suppress warnings, such as regarding the removed observations with missing value for hydro reservoir, we can set the option `warning=FALSE` for the chunk.
+
+```{r, warning=FALSE}
+ggplot() +
+
+rm(weekdata)
+```
+
+
+#### 4.
+
+Begin by calculating the values we want to plot by filling in the rest:
+```{r}
+hourdata <- elmarket %>%
+    mutate(hour=hour(time)) %>% 
+```
+
+
+
+
+
+To get the temperatures in the same plot, you can use the following code:
+
+```{r}
+hourdata %>% 
+    select(hour,"Norway"=nortemp,"Sweden"=swetemp) %>% 
+    gather(key="Country",value="Temperature",-hour) %>% 
+    ggplot(aes(x=hour,y=Temperature,color=Country,linetype=Country)) +
+    geom_line() +
+    scale_x_continuous(breaks=seq(0,24,2)) +
+    labs(x="Hour",y="Average Temperature") +
+    scale_color_brewer(palette = "Set1")
+```
+
+
+
+#### 5.
+
+
+#### 6.
+
+We want to include indicators for month and year, in R this can be handled with factor variables.
+
+```{r}
+elmarket <- elmarket %>% 
+    mutate(month=factor(month(time)),
+           year=factor(year(time)))
+```
+
+
+Proceed by estimating the equations and obtaining the residuals. Fill in the remaining:
+
+```{r}
+volume_nortemp_fit <- lm(volume ~ nortemp,
+                     data=elmarket)
+
+volume_nortemp_res <- residuals(volume_nortemp_fit)
+
+volume_nortemp_month_fit <- 
+
+volume_nortemp_month_res <- 
+
+volume_nortemp_month_year_fit <- 
+
+volume_nortemp_month_year_res <- 
+
+rm(volume_nortemp_fit,volume_nortemp_month_fit,volume_nortemp_month_year_fit)
+
+```
+
+Add the average volume to the residuals:
+```{r}
+
+```
+
+Now we can make the plots. Begin with the original series. Hint: You might want to average the series by week, as in task 3.
+
+```{r}
+# Fill in code to make a plot of the raw data series for volume
+```
+
+You can use the following code to plot the residualized series in the same graph.
+
+```{r}
+tibble(time=elmarket$time,
+                   volume_nortemp_res,
+                   volume_nortemp_month_res,
+                   volume_nortemp_month_year_res) %>% 
+    mutate(week=floor_date(time,
+                           unit="1 week",
+                           week_start = 1)) %>% 
+    select(-time) %>% 
+    rename("Residualized - Temperature"=volume_nortemp_res,
+           "Residualized - Temperature & Month"=volume_nortemp_month_res,
+           "Residualized - Temperature, Month & Year"=volume_nortemp_month_year_res) %>% 
+    gather(key="Series",value="Volume",-week) %>% 
+    group_by(week,Series) %>% 
+    summarize(Volume=mean(Volume)) %>% 
+    ggplot(aes(x=week,y=Volume,color=Series,linetype=Series)) +
+    geom_line() +
+    theme(legend.position = "bottom",
+          legend.direction = "vertical",
+          legend.title.align = 0.5) +
+    labs(x="Weekly Date") +
+    scale_color_brewer(palette = "Set1")
+
+```
+
+#### 7.
+
+
+### Estimating supply and demand
+
+#### 8.
+
+It can be helpful to generate a factor variable for hour of day.
+
+```{r}
+elmarket <- elmarket %>% 
+    mutate(hour=factor(hour(time)))
+```
+
+
+
+You should estimate a few different specifications and discuss which would make most sense and why. The following illustrates a couple of useful commands and option. Here is an IV regression with many indicators as control variables:
+```{r}
+supply_iv_hourcont <- ivreg(volume ~ price + hydrores + hour + month + year | 
+                              nortemp + swetemp + hydrores + hour + month + year,
+                            data=elmarket)
+```
+
+For instance, you can use the `summary` function to get a more compact table of results than Stargazer gives (though the tables from Stargazer is much more suited for finished products, such as reports and articles).
+```{r}
+summary(supply_iv_hourcont)
+```
+
+We can also use Stargazer with the option `omit` to remove certain variables from the table. It can take a "stub" or a vector of "stubs" as argument, i.e., the first part of the name for a range of variables (such as hour1, hour2, etc.). Using `omit.labels`, we can specify the label for the row in the table which indicates whether a variable or a set of variables was included in the estimation. This is useful for these types of control variables, which only serves the purpose of capturing certain fixed effects, and we do not necessarily care for the estimated coefficients themselves. We also illustrate using `dep.var.labels` and `covariate.labels` to label everything in the table sensibly.
+```{r, results='asis', warning=FALSE}
+stargazer(supply_iv_hourcont,
+          type='html',
+          omit = c('hour', 'month'), omit.labels = c('Hour FE', 'Month FE'),
+          dep.var.labels = "Volume, GWh",
+          covariate.labels = c("Price, EUR/MWh", "Hydro res., TWh", "2014", "2015", "2016"),
+          digits=2,
+          keep.stat = c('n', 'rsq'))
+```
+
+
+
+The following is an example of using functions from the ivpack package to compute different types of standard errors. First we calculate heteroscedasticity robust standard errors:
+
+```{r}
+library(ivpack)
+
+robust <- robust.se(supply_iv_hourcont)
+```
+
+We can also calculate cluster robust standard errors. Clustering of residuals basically allows the residuals to have arbitrary correlation within a cluster (any form of autocorrelation and heteroskedasticity, but only within the cluster). Choose a quite "aggressive" clustering, by letting errors be correlated in any way within each week of the sample (not
+week number of the year, but week by week):
+
+```{r}
+elmarket <- elmarket %>% 
+    mutate(week=floor_date(time,
+                    unit="1 week",
+                    week_start = 1))
+
+cluster <- cluster.robust.se(supply_iv_hourcont,elmarket[!is.na(elmarket$hydrores),]$week)
+```
+Note that this assumes that there is no correlation between clusters, which
+doesn't necessarily fit the structure of the dataset too well, but this
+example is mostly for illustration.
+
+For comparison, we can make a new table where we compare the different standard errors:
+
+```{r, results="asis"}
+stargazer(supply_iv_hourcont,supply_iv_hourcont,supply_iv_hourcont,
+          type="html",
+          digits = 2,
+          omit = c("hour","month","year"),
+          omit.labels = c("Hour FE","Month FE","Year FE"),
+          covariate.labels = c("Price, EUR/MWh","Hydro res, TWh"),
+          dep.var.labels = c("Volume, GWh"),
+          column.labels = c("Default","Robust","Clustered"),
+          keep.stat=c("n","rsq"),
+          se=list(NULL,robust[,2],cluster[,2])) #The standard errors are stored in the second column of the coeftest objects
+```
+We see that the standard errors become larger when we allow for non-IID residuals, particularly when we cluster on week (indicative of significant amounts of autocorrelation in the residuals over time, which might not be surprising with hourly data).
+
+#### 9.
+
+
+
+
+#### 10.
+
+We use the functions stat_summary_bin to plot average values of volume for 100 temperature bins. We also add a linear fit to the plot to clarify whether or not the relationship seems linear. 
+
+```{r}
+ggplot(data=elmarket,aes(x=nortemp,y=volume)) +
+    stat_summary_bin(fun.y="mean",bins=100,geom=c("point")) +
+    geom_smooth(method="lm",se = FALSE) +
+    labs(x="Temperature",y="Volume")
+```
+
+When assessing instruments, where we will often add a linear specification of the instrument
+(at least as a start), which means that this can be useful for assessing how
+appropriate a linear specification is. In this case, there's some apparent
+deviations from a linear relationship from temperatures higher than 10 degrees.
+This should make us think hard about why that is, and not - as some are tempted
+to do - try to find another functional form for the relationship which will fit
+better in a statistical sense (at least before we are sure about the underlying
+causes creating the deviation from linearity). This doesn't mean that we're
+always seeking linearity, but we should be sure that non-linearities are due
+to a causal relationship, and not driven by omitted variable bias.
+
+From what we've seen earlier, the hour of the day is correlated with both volume
+and temperature in a very specific way (and is actually the major cause of the
+non-linearity after 10 degrees).
+
+
+We now plot the same relationship after residualizing the variables with respect to hour of the day. In this case we specify how we want to obtain the residuals within the ggplot function, but we could also have obtained the residuals in a separate step and given them as an argument to ggplot. 
+
+```{r}
+ggplot(data=elmarket,
+       aes(x=residuals(lm(nortemp ~ hour,
+                          data=elmarket)),
+           y=residuals(lm(volume ~ hour,
+                          data=elmarket)))) +
+    stat_summary_bin(fun.y="mean",bins=100,geom="point") +
+    geom_smooth(method="lm",se=FALSE) +
+    labs(x="Residualized Temperature",y="Residualized Volume")
+
+```
+
+We see that "partialling out" hour gives us a relationship which seems to be
+closer to linear, and it is also very "tight" (no large jumps in the y-value
+from one consecutive bin to another - this is to some extent driven by the
+relatively large amount of observations in this data set, but also the fact that
+the relationship between temperature and volume is very strong). If this was
+the only plot we relied on to assess how to enter temperature into the demand
+equation, we would have little reason to use another functional relation than
+the standard linear.
+
+The deviations from linear becomes even smaller (in an absolute sense) if we
+also add other time-controls from the demand equation above:
+
+```{r}
+ggplot(data=elmarket,
+       aes(x=residuals(lm(nortemp ~ hour + month + year,
+                          data=elmarket)),
+           y=residuals(lm(volume ~ hour + month + year,
+                          data=elmarket)))) +
+    stat_summary_bin(fun.y="mean",bins=100,geom="point") +
+    geom_smooth(method="lm",se=FALSE) +
+    labs(x="Residualized Temperature",y="Residualized Volume")
+```
+
+It is useful to note that the range of the x-axis becomes quite a bit narrower when adding the additional time controls (This is also a nice illustration of what control variables do, i.e., removing variation in "all" variables of interest, here for both temperature and volume).
+
+
+Go through the same steps with price and discuss.
+
+
+#### 11.
+
+##### (a)
+
+You can use the following code to get a figure plotting average price and volume within each bin in the same plot (note that this works without a secondary y-axis, since the values of volume in GWh and price in EUR/MWh are fairly close to one another).
+
+```{r}
+elmarket %>% 
+    select(nortemp,price,volume) %>% 
+    rename("Price"=price,"Volume"=volume) %>% 
+    mutate(Volume=Volume) %>% 
+    gather(key="Variable",value="Value",-nortemp) %>% 
+ggplot(aes(x=nortemp,y=Value,color=Variable)) +
+        stat_summary_bin(fun.y="mean",binwidth=1,geom="point") +
+    scale_color_brewer(palette = "Set1") +
+    labs(x="Temperature")
+```
+
+You can also use the option `fun.data="mean.se"` (calculates average and standar error) together with `geom="pointrange"`, which will display the average with error bars. By default, this will just show one standard error of the bin-average in the bars, so to get an approximate 95% confidence interval, we must use `fun.args=list(mult=1.96)` to tell `mean.se` to multiply the standard error by 1.96. An good alternative is `fun.data="mean_cl_boot", which does not require you to pass additional arguments (it makes error bars that covers 95% confidence interval by default), though somewhat slower (computationally). This helps us see the uncertainty in the estimate of the mean in each bin (which will be a function of the variability/standard deviation of values within the bin and the number of observations in the bin). We should always be careful in reading too much into a "pattern" where we have few observations or the underlying variability is large.
+```{r}
+elmarket %>% 
+    select(nortemp,price,volume) %>% 
+    rename("Price"=price,"Volume"=volume) %>% 
+    mutate(Volume=Volume) %>% 
+    gather(key="Variable",value="Value",-nortemp) %>% 
+ggplot(aes(x=nortemp,y=Value,color=Variable)) +
+        stat_summary_bin(fun.data="mean_se", fun.args=list(mult=1.96),binwidth=1,geom="pointrange") +
+    scale_color_brewer(palette = "Set1") +
+    labs(x="Temperature")
+```
+
+And now the number of observations in each bin. We can use `geom_histogram` with the option `binwidth=1`. Adding `boundary=0` just ensures that the bins line up more or less exactly with the ones generated by `stat_summary_bin`, though this is not particularly important.
+```{r}
+ggplot(data=elmarket,aes(x=nortemp)) +
+    geom_histogram(binwidth=1, boundary=0) +
+    labs(x="Temperature",y="Observations")
+```
+
+
+
+Lastly we plot average volume and price against each other. To replicate the bins from `stat_summary_bin`, we can use `cut_width` with `width=1` and `boundary=0` (to line up the bins in the same way).
+
+```{r}
+elmarket %>% 
+    mutate(tempbin=cut_width(nortemp,width=1,boundary=0)) %>% 
+    group_by(tempbin) %>% 
+    summarize(meanvolume=mean(volume),
+              meanprice=mean(price)) %>% 
+    ggplot(aes(x=meanvolume,y=meanprice)) +
+    geom_point() +
+    labs(x="Volume",y="Price")
+```
+
+
+
+
+##### (b)
+
+We begin by residualizing the variables with respect to hour, month, year and hydrores (fill in the missing):
+
+```{r}
+
+nortemp_res <- residuals(lm(nortemp ~ hour + month + year + hydrores,
+                            data=elmarket)) + mean(elmarket$nortemp,na.rm=TRUE)
+
+price_res <- 
+
+
+volume_res <- 
+
+```
+Here it is important to note that there are 312 missing values in hydrores:
+
+```{r}
+sum(is.na(elmarket$hydrores))
+```
+Because we are residualizing with respect to hydrores this means that we will have missing values in the residualized variables in the rows where hydrores is missing. We can handle this by subsetting the dataset to only include rows where hydrores is not missing. 
+
+```{r}
+elmarket_subs <- elmarket %>% 
+    filter(!is.na(hydrores))
+```
+
+We can now include the residualized variables in the subset data.
+
+```{r}
+elmarket_subs <- cbind(elmarket_subs,nortemp_res,price_res,volume_res)
+```
+
+We also need to note that the range of the residualized temperature is much smaller:
+
+```{r}
+range(nortemp_res)
+```
+
+Make the same plots as before, using the residualized data.
+
+
+
+##### (c)
+
+
+
+
+
+
+##### (d)
+
+
+
+#### 12. Extra:
+
+##### (a)
+
+
+##### (b)
+Hint: Since neither the supply curve nor the demand curve is uniquely defined here
+(varies by hour, month, year and temperature), you need to do some choices.
+You can either try to make some suitable "average curves", pick representative
+values, or just choose something as an example. One could also calculate several
+and average, or simulate (bootstrap) over the curves to get at the uncertainty 
+in the estimates of the changes in volumes, prices and surplus (this would be
+the "right" thing to do if we were giving input to public policy, for instance).
+This isn't necessarily hard to do, but is outside the scope of this course
+(though you might feasibly explore such options for your term paper).
+
+Technical comment:
+Note that if we consider the slope parameters as fixed (i.e., not accounting for the
+statistical uncertainty in these), then the only uncertainty will be in the
+changes in surplus, since the change in price, volume and deadweight loss is
+only a function of the slope parameters and the size of the tax (in the linear
+case we have here).
+
+
+##### (c)
+This is largely analogous to the case above, only with a quantity intervention, rather than a price intervention.
+
+
+
+##### (d)
+At the webpages of Nordpool spot, you can download the market cross data by going
+to "Market data", "Data downloads", "System Price Curve Data" (You can filter by
+"Market Cross Points data report" to remove the graph downloads).
