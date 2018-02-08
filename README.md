@@ -77,7 +77,14 @@ Prior to each lab, we will make all material available in this repository. This 
 1. Click the button "Create pull request"
     - Fill in at least a title for the pull request, for example "Update lab material" (might be filled in already if there is only one commit to merge from the course repository), and possibly a comment
     - Click "Create pull request" again
-1. If you see the message "This branch has no conflicts with the base branch", you can click the button "Merge pull request" and you're done
+1. If you see the message "This branch has no conflicts with the base branch", you can click the button "Merge pull request" and you've successfully updated your repository *on GitHub*, that is, your online repository residing on GitHub's servers
+1. To update the files on your computer so you can work with them, follow these steps
+    - Open RStudio
+    - Open the project you created when you set up RStudio to work with Git (if this is not your current default workspace)
+    - Open the "Git" tab (in the upper right pane, or select "Show Git" under the "View" menu)
+    - Click "Pull" to update the repository on your computer 
+
+*Pull* can roughly be translated with "download", and this will make your local files fetch changes that was made to your remote repository. For the most part of this course, you will just use this to get updates of the lab exercises in the repository. In practical settings where you work in a team (for instance if you choose to use Git to handle the work on your termpaper), this is useful to get all updates other members of your team have made on your project. This will allow you to have a working history of your project, together with messages documenting the changes that was done at each step. Beware that if several people have worked on the same files at the same time, there will be conflicts. In RStudio, you will get a comparison of the differences in the files which will need to be handled, though it can be a bit difficult to understand exactly how to use it when you see it for the first time (I suggest googling this to learn about it if this happens to you).
 
 *In case of conflict*: If you get a message along the lines "Conflicts found/need to be resolved", it means that the same files have been changed *both* in your fork and in the course repository. It is necessary to resolve the conflicts. The easiest will probably be to cancel/close the pull request, delete the conflicting files from your computer (it's highly unlikely that it's any of your own work), use RStudio to stage, commit and push the deletions (see the next section), and go back to GitHub and start from step 1 above.
 
@@ -116,3 +123,10 @@ interpret the differences in the main coefficient.
 ## Other information and tips on using R
 
 As a general approach to data cleaning and manipulating data ("data wrangling"), we will follow the philosophy of [Tidy data](http://vita.had.co.nz/papers/tidy-data.html), which can roughly be described as getting the data in a shape where each row corresponds to an observation and each column corresponds to a variable *before* doing any analysis (more often than not, this requires some careful thought and planning). This is facilitated by a set of R packages known as [the Tidyverse](https://www.tidyverse.org/). You are not expected to know how to use these packages before the first lab, though you might find it helpful to consult some of the sources listed here as the course progresses. You can find documentation with examples on the webpages of each of the packages, such as the vignettes for [dplyr manipulation](http://dplyr.tidyverse.org/articles/dplyr.html), [dplyr merging](http://dplyr.tidyverse.org/articles/two-table.html) and [tidyr/tidy data](http://tidyr.tidyverse.org/articles/tidy-data.html), and the listed sources for learning [ggplot2](http://ggplot2.tidyverse.org/). An advanced introduction to R (and Data Science in general) using these packages can be found in the online book/tutorial [R for Data Science](http://r4ds.had.co.nz/) (also listed above). In addition, the Stargazer package will allow us to craft publication quality tables. See, for instance, the extensive list of tips with examples found in this [Stargazer cheat sheet](https://www.jakeruss.com/cheatsheets/stargazer/).
+
+
+### R notebooks and other formats
+
+In most labs, we will use [R notebooks](http://rmarkdown.rstudio.com/r_notebooks.html) (click the link for more information) as the default mode of operation. This is a rich mode of working with code, such that results appear in the same place, and documentation/explanation/reporting can be placed alongside the code that generates the result. This is known as [literate programming](https://en.wikipedia.org/wiki/Literate_programming).
+
+Another fruitful way of doing literate programming in RStudio is to use [R Markdown](http://rmarkdown.rstudio.com/lesson-1.html) documents, which works almost the same way as R Notebooks. With R Markdown documents, one has the option of choosing to create the final output as a pdf (requires a latex installation) or a word file (requires MS office or Libre/Open office). Note that one can specify that the output from an R Notebook should be one of these formats as well, by changing the "output" option.
