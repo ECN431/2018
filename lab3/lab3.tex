@@ -1,0 +1,81 @@
+\documentclass[12pt,a4paper]{article}
+
+
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{multirow}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage[top=1in, bottom=1in, left=1in, right=1in]{geometry}
+
+
+\title{ECN431\\Lab session 3 \\ Differences-in-differences and patent protection}
+\date{Aud 12 \\ Friday, February 23\textsuperscript{rd} 2018}
+\begin{document}
+\maketitle
+
+\section*{Before the Lab}
+\begin{itemize}
+\item Obtain the datasets and the example R notebook from the GitHub repository of the course.
+\item Try to work through the exercises on your own prior to the lab.
+\end{itemize}
+
+\section*{Purpose of this lab}
+Perform and understand differences-in-differences estimation, and learn some basic features of the pharmaceutical market.
+
+\subsection*{Learning goals}
+\begin{itemize}
+\item	Understand the use and limitations of diff-in-diff estimation
+\item	Be able to perform diff-in-diff estimates
+\item	Know how to perform the most common assessments of diff-in-diff
+\end{itemize}
+
+
+\subsection*{Practical information}
+The example R notebook (which you either pulled to your fork from the main repository or downloaded from GitHub) is opened in RStudio. This file contains several commands that you will need in order to answer the questions in these exercises, in addition to information on new commands. Remember: If/when you are uncertain about the purpose, functionality and extensions to/options for some of the commands, remember that you can get documentation for the command in RStudio by pressing F1. You should also try to google your particular problem.
+
+
+\section*{Exercises}
+
+\subsection*{Effects of entry: The pharmaceutical market and loss of patent protection}
+Use the data set in \emph{pharma.csv} for this exercise. In this exercise, you will analyze the development in the market for pharmaceutical drugs around patent expiry. The dataset contains information from May 2004 to December 2007 on monthly sales in daily defined doses (DDD), price, regulated maximum price and wholesale price (in NOK per package), as well as the amount of DDD per package for all unique products within 41 different ATC codes.\footnote{ATC is an abbreviation for Anatomical Therapeutic Chemical, a way of classifying drugs according to classes of treatment, based on their main active ingredient. The active ingredients are the ones responsible for the medical effect. More information on the classification system can be found at \url{https://www.whocc.no/atc_ddd_index/}.}
+
+For each ATC, there can be several specific products, identified by the field \emph{pharmaid}, where the product can be thought of as a specific package.\footnote{This ID would identify uniquely the producer, the size of the package, and the concentration of the active ingredient, though you only have a measure of the size of the package in this dataset.} 
+
+There are 5 ATC's in the sample which experience entry from other producers than the original patent holder/innovator in this data set. Such entry is only possible after patent expiry. Entry happens in December 2005 for ATC M05BA04 and N02CC01, in January 2006 for A10BB12 and G03HB01, and February 2006 for G04CA02. The entering drugs are identified by the indicator \emph{generic}.
+
+In this exercise, you will analyze the effect of entry by competing producers on the outcomes of the incumbent (innovator) in the pharmaceutical market.
+
+
+\subsubsection*{Patent protection and the Norwegian pharmaceutical market}
+When medical drugs are first marketed, they are usually on a patent and can only be produced by the patent holder, or by licensing from the patent holder. Drugs sold by the firm that produced under patent are called \emph{originator} drugs. After the patent runs out, other firms are free to produce the same drug. These drugs are called \emph{generics}. Patents have typically been given for specific molecules (with a unique ATC code), in which case drugs with this molecule can ``freely'' be produced by ``anyone''.\footnote{There is, of course, extensive regulation on the production process, quality control, handling and logistics, meaning that production of generics is done by specialized companies.}
+
+In Norway, the regulator always sets a price ceiling (\emph{maximum price}) for prescription drugs.\footnote{This is different for so-called over-the-counter drugs, which can be bought without prescription. For non-prescription drugs, pricing is free, i.e., no regulation. Examples are mild painkillers and nosespray, which you can find in regular grocery stores.} The price ceiling is usually updated every year, calculated as the average of the three lowest prices for the drug in a basket of 9 comparison countires.\footnote{This is known as \emph{reference pricing}. The 9 countries used for comparison are Sweden, Finland, Denmark, Germany, UK, Netherlands, Austria, Belgium and Ireland. The Norwegian Medicines Agency (Statens Legemiddelverk) is responsible for setting the regulatory prices in the Norwegian market. If you're curious, you can read more about the maximum price (and other regulatory affairs) on their pages: \url{http://www.slv.no}.}
+
+In Norway, after generics enter the market, the regulator will also set a maximum reimbursement. For this setting, you can think of the maximum reimbursement as the highest amount that the government will cover per unit of a prescription drug, while any price in excess of this must be covered by the consumer. An example: If the maximum reimbursement per package is 100, and the price per package is 80, you pay 0 for the drug, while if the price is 150, you pay 50. Since 2005, the initial maximum reimbursement has been set as a percentage of the price ceiling when generics first enter, at least for the most part.\footnote{Prior to this, a slightly different kind of reference pricing scheme was in place for the maximum reimbursement.} After this, it will be reduced by fixed, additional percentages at fixed times afterwards (6 and 18 months after generic entry). The maximum reimbursement is only tied to the price ceiling through the value of the price ceiling at the time of generic entry, and will not be changed based on updated maximal prices afterwards.\footnote{There are some exceptions, such as when the producers can prove that the reduction will put prices below their costs, but you can assume that this doesn't pose a problem for your analysis with this dataset.}
+
+After generics enter, pharmacies are obliged to both have and offer generic alternatives to consumers. Many countries have what is known as \emph{generic substitution}, which means that the consumer/patient can get another alternative delivered from what is prescribed by the doctor, as long as it is equivalent in treatment.\footnote{This means that it will have the same amount/concentration of the same active ingredient.} In Norway (as in many other places), this is handled at the pharmacy level, meaning that the pharmacist has the responsibility of suggesting a generic substitute for whatever is prescribed.
+
+\begin{enumerate}
+ \item[] \emph{Present and understand your data}
+ \item Make a table showing separate descriptive statistics for drugs (as given by their ATC code) that do and don't experience generic entry in the sample period. Include all the relevant variables.\footnote{You need to identify the drugs facing generic entry at some point in the data.} Discuss in your group differences and similarities in light of doing a diff-in-diff analysis between these groups
+ \item Make histograms of prices in the periods where no generics are present for the two groups of drugs (with and without generic entry). Do the same with prices per standardized unit (DDD) and log of sales in DDD. Discuss whether and how any of this will impact on your later analysis.
+ \item Make a plot showing the number of unique originator products per ATC code averaged per month in the two groups over time.\footnote{Count the number of products per ATC codes (not including generics), then take the monthly average of that.} Also, still only for originator products, show the diff-in-diff plot for DDD (feel free to also try log of DDD) on the product level (average per product over time in the two groups). Discuss potential reasons why the diff-in-diff plot looks less ``good'' than desirable, and how the product-level resolution of the data can be related to this. Also discuss potential features making the diff-in-diff graph somewhat hard to assess here, and potential improvements addressing this.
+ \item Plot average monthly price and maximum price separately for originator products in each group. Discuss how prices are set, the effect of competition and things you would consider when comparing the development in the two groups. Also consider some of the more ``odd'' developments in price in light of what you learned from the previous task.
+ \item You will now perform the analysis at the ATC-producer level -- first collapse the data to the ATC-producer-month level (taking the producer level to be generic or not), generating total sales in DDD and volume-weighted prices. Make the diff-in-diff plot for quantity sold (which is now a sum within ATC) for originator products in the two groups of ATC codes. Do this both for the average of DDD and the average of log DDD (over ATC codes in each time period for both). Discuss the diff-in-diff assumptions, and the reasons for why the log-transform seems to work better in this case, even though the overall pre-trends do not seem to be much affected.
+ \item[] \emph{Estimating diff-in-diff}
+ \item Estimate by how much quantity sold of originator products is reduced when generics enter with a diff-in-diff regression. How do you define ``before'' and ``after'' here (discuss with your group)?
+ \item Consider the following regression model: $\ln DDD_{it} = \beta_0 + \lambda_t + \gamma d_i + \delta D_{it}$, where $d_i$ is an indicator for ATC codes that will experience generic entry, $D_{it}$ is a dummy for actually facing generic competition, and $\lambda_t$ is specified as an indicator for each time period. Discuss why the inclusion of time-fixed effects (dummies for time period) removes the need for specifying a single ``before'' and ``after'' for the whole sample.
+ \item Do all necessary steps of a diff-in-diff analysis for prices. Discuss in your group all the elements needed, and assess the assumptions and results.
+ \item Do a DiD analysis on the \emph{total} DDD sold within ATC (including sales of generics). Does competition seem to affect (total) quantity sold in this market? Make some suitable plots of development in prices and DDD sold, separately for generic and originator drugs, only for the ATCs that get generic competition. Discuss.
+ \item Extra:
+ \item[] \emph{Further assessment of diff-in-diff}
+  \begin{enumerate}
+  \item When we add controls, such as the time-fixed effects, the relevant condition for DiD is that parallel trends and exogeneity holds conditional on the controls. Show the diff-in-diff plot for log DDD after conditioning on the time-fixed effects. (Would a measure for the average package size be a useful control? Plot it.)
+  \item Do a test for common trends/pre-treatment effects before generic entry for log DDD, by including some time interactions with the treatment group before generics enter. Also add in several dummies for suitable groupings of time after generic entry to assess the time profile of the effect of generic entry.
+  \item Create a variable for price relative to the maximum price (maximum price minus price). Perform a DiD analysis with this variable, discuss and assess.
+  \end{enumerate}
+\end{enumerate}
+
+
+\end{document} 
