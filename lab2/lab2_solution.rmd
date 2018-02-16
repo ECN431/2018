@@ -1,0 +1,1985 @@
+---
+title: "Lab 2 Solution Proposal"
+date: "February 2, 2018"
+output:
+  html_notebook:
+    highlight: default
+    theme: united
+    toc: yes
+    toc_float: yes
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Setup 
+
+We begin by loading the packages we will be using.
+
+
+```{r,message=FALSE}
+library(tidyverse)
+library(haven)
+library(stargazer)
+library(lubridate)
+library(AER)
+```
+
+## Warming up at the Fulton fish market
+
+We now proceed by loading the dataset using the `read_dta` function from the haven package (part of the tidyverse).
+
+
+```{r}
+fishmarket <- read_dta("fishmarket.dta")
+```
+
+### Present and understand your data
+
+#### 1.
+
+As in the previous lab, we can make a table of summary statistics using the stargazer package.
+
+```{r}
+summarydata <- fishmarket %>% 
+    select(price,quan,stormy,mixed)
+
+stargazer(as.data.frame(summarydata),
+          type = "text",
+          covariate.labels = c("Price",
+                               "Quantity",
+                               "Stormy Weather",
+                               "Mixed Weather"))
+```
+
+
+#### 2.
+
+The date variable is not in a format we want to work with at the moment, so we need to fix that. THe date variable is currently in the format year, month, day (numeric with YYMMDD), so we can format it using the function `ymd` from the lubridate package (we just replace the current date variable with the new one as we have no use for the old one).
+
+```{r}
+fishmarket <- fishmarket %>% 
+    mutate(date=ymd(date))
+```
+
+
+Now we can plot the quantity sold per day. A step-plot (`geom_step`) works well in this instance, making apparent the changes from date to date. In some instances, we might want to specify how the markers on the axes should be formatted. `ggplot` will usually do something sensible, but sometimes we can improve the figure by providing more detailed instructions. Here, we specify that the x-axis should be formatted as a date (`scale_x_date`) with a monthly resolution.
+
+```{r}
+ggplot(data=fishmarket,aes(x=date,y=quan)) +
+    geom_step() +
+    scale_x_date(date_breaks = "1 month") +
+    labs(x="Date",y="Quantity Sold (pounds)")
+```
+
+We can also plot the price per unit each day. 
+
+```{r}
+ggplot(data=fishmarket,aes(x=date,y=price)) +
+    geom_step() +
+    scale_x_date(date_breaks = "1 month") +
+    labs(x="Date",y="Price Per Pound (USD)")
+```
+
+It might be easier to see how prices and quantities vary together if we place the two plots in one figure, though this requires a bit more effort to get to work "straight out of the box":
+```{r}
+fishmarket %>% select(date, price, quan) %>% 
+  gather(key = 'variable', value = 'value', -date) %>% 
+  ggplot(aes(x=date, y=value)) +
+  geom_step() + 
+  facet_grid(variable ~ ., scales = 'free_y',
+             labeller = as_labeller(c('price'='Price Per Pound (USD)', 'quan'='Quantity Sold (pounds)'))
+             ) +
+  scale_x_date(date_breaks = "1 month") +
+  labs(x = 'Date', y = '')
+```
+
+
+#### 3.
+
+We now regress quantity on price and make a regression table using stargazer. By using the options `covariate.labels`, we can change the display of variable names in the table, while `dep.var.labels` can be used to change the header over each column.
+
+```{r}
+quan_price_ols <- lm(quan ~ price,
+                     data=fishmarket)
+
+stargazer(quan_price_ols,
+          type="text",
+          covariate.labels = c("Price"),
+          dep.var.labels = c("Quantity Sold"),
+          keep.stat = c("n","rsq"))
+```
+
+The sign is negative, which is what we would expect in demand. Still, this is a market system, where we expect unobserved demand factors to influence price as well. Make sure you understand how this could arise (unobserved demand factors shifting the demand curve along the supply curve, thereby changing price, and/or unobserved demand factors being correlated with unobserved factors shifting supply).
+
+The results are probably easier to read if we scale quantity to 1000 pounds and set the number of digits after decimal to two:
+```{r}
+quant_price_ols <- lm(quan / 1000 ~ price,
+                      data=fishmarket)
+
+stargazer(quant_price_ols,
+          type="text",
+          digits = 2,
+          covariate.labels = c("Price"),
+          dep.var.labels = c("Quantity Sold (1000 pounds)"),
+          keep.stat = c("n","rsq"))
+```
+
+Note that we can also create a table which looks nicer in the html output of the notebook by specifying the option `results='asis'` for the chunk (necessary for the final output to display the table correctly) and `type=html` for stargazer (though it becomes hard to see the results when working with the notebook directly). (Optionally, one can also set the option `style` to give the table a particular format, as shown here)
+```{r, results='asis'}
+stargazer(quant_price_ols,
+          type="html",
+          style='aer',
+          digits = 2,
+          covariate.labels = c("Price"),
+          dep.var.labels = c("Quantity Sold (1000 pounds)"),
+          keep.stat = c("n","rsq"))
+```
+
+
+### Assessing and understanding IV
+
+#### 4.
+
+To make this plot, we have to generate a variable showing if the weather is stormy, mixed or clear at sea.
+
+```{r}
+fishmarket <- fishmarket %>% 
+    mutate(weather=ifelse(stormy==1,"High wind and waves",
+                          ifelse(mixed==1,"Mixed wind and waves",
+                                 NA)))
+```
+
+We can now make the plot. This involves invoking the `fill` aesthetic of ggplot, which will make columns of separate color for the weather-type. The option `alpha` tells ggplot how opaque or transparent we want the element to be, where a lower value means more transparent, which can help with making other features easier to see (like the price series here). We filter out the `NA`-values from the variable *weather* using the `filter`-function (from the tidyverse package dplyr), so that these do not feature with a fill-color or in the legend of the plot. `scale_fill_brewer` allows us to choose the color scheme for the `fill`-aesthetic that we've chosen, which we optionally can provide with a name, otherwise the default is the variable name (weather, with lower-case initial). 
+
+```{r}
+ggplot(data=fishmarket,aes(x=date,y=price)) +
+    geom_col(data=filter(fishmarket,!is.na(weather)),
+             aes(y=Inf,fill=weather),
+             alpha=0.3) +
+    geom_step() +
+    scale_fill_brewer(name = "Weather", palette = "Set1") +
+    scale_x_date(date_breaks = "1 month") +
+    labs(x="Date",y="Price Per Pound (USD)") +
+    theme(legend.position = "bottom",
+          legend.direction = "vertical",
+          legend.title.align = 0.5)
+```
+
+From this plot, it seems quite clear that prices tend to be higher when the weather at sea is worse (though not without variation). This is a nice way of inspecting the instrument we will be using in this setting (indicators for events over time). We could also make the same plot using quantities instead of prices to verify that the shifts in prices from weather conditions seem to affect demand as well.
+
+
+
+#### 5.
+
+We estimate the regression equations and present them in a table using stargazer.
+
+```{r}
+price_stormy_ols <- lm(price ~ stormy,
+                       data=fishmarket)
+
+quan_stormy_ols <- lm(quan / 1000 ~ stormy,
+                      data=fishmarket)
+
+stargazer(price_stormy_ols,quan_stormy_ols,
+          type="text",
+          covariate.labels = c("Stormy Weather"),
+          dep.var.labels = c("Price","Quantity"),
+          keep.stat = c("n","rsq"),
+          digits=3,
+          digit.separator ="")
+```
+
+Constants gives the average value of price and quantity when weather is not stormy, while the coefficient on stormy is the change in the average when the weather is stormy. Average value when stormy is then "constant + coeff. stormy". We can also calculate the avarege values using R.
+
+```{r}
+avg_by_stormy <- fishmarket %>% 
+    group_by(stormy) %>% 
+    summarize("Average Price" = round(mean(price), 3),
+              "Average Quantity" = round(mean(quan / 1000), 3))
+
+avg_by_stormy
+```
+
+We can calculate the difference by picking out the row of the stored averages where wheather is stormy and not (using `filter`) and subtracting:
+```{r}
+filter(avg_by_stormy, stormy==1) - filter(avg_by_stormy, stormy==0)
+```
+which we see are equal to the coefficients on *Stormy weather* in the regression table.
+
+We can calculate the ratio of changes in several ways, for instance by using the coefficients from the regressions:
+
+```{r}
+#Ratio of changes
+quan_stormy_ols$coefficients['stormy'] / price_stormy_ols$coefficients['stormy']
+```
+
+
+#### 6.
+
+We begin by estimating the instrumental variables equation as well as the first stage equation. Note the use of `I()` in the formula for the IV regression. Previously, we've just written `quan / 1000` whenever we wanted to scale quantity to thousands, but not all regression functions directly accepts such expressions modifying the values of a variable. The special function `I()` solves this, such that we can do calculations with a variable for most regression functions without having to create and store new variables for every instance (should be used for instance when we want to include squared terms, e.g., `I(x^2)`).
+
+```{r, results='asis'}
+quan_price_iv <- ivreg(I(quan / 1000) ~ price | stormy,
+                       data=fishmarket,
+                       x=TRUE)
+
+quan_price_first <- lm(price ~ stormy,
+                       data=fishmarket)
+
+stargazer(quan_price_first,quan_price_iv,
+          type="html",
+          style="aer",
+          covariate.labels = c("Stormy Weather","Price"),
+          dep.var.labels = c("Price","Quantity"),
+          column.labels = c("(First Stage)","(Second Stage)"),
+          model.names = FALSE,
+          digits = 2,
+          notes = ("Price was instrumented for using an indicator for stormy weather"),
+          notes.align = "l",
+          keep.stat = c("n","rsq","F"))
+```
+
+See that the coefficient exactly equals the ratio of the coefficients from before. This is a way of formulating the IV-regression, where the coefficient in the "reduced form" (variable of interest on IV) is divided by the coefficient in the "first stage" (endogenous variable on IV). See the lecture notes for further explanation ("IV from exogeneity").
+
+The instrument seems to be relevant, from inspecting the first stage (regression of price on stormy). Stormy has a relatively low standard error compared to the coefficient size (statistical significance), the shift in price it implies seems reasonably large (roughly one standard deviation of price, and 35% of the average), and the F-statistic is 20 (well beyond the rule of thumb of 10)
+
+We could be worried that the weather at sea is correlated with weather on land, which could affect demand for fish. We could test whether including rainy and cold (on shore) as controls affects the estimates.
+
+```{r, results='asis', warning=FALSE}
+quan_price_first_controls <- lm(price ~ stormy + rainy + cold,
+                                data=fishmarket)
+
+quan_price_reduced_controls <- lm(quan / 1000 ~ stormy + rainy + cold,
+                                  data=fishmarket)
+
+quan_price_iv_controls <- ivreg(I(quan / 1000) ~ price + rainy + cold | rainy + cold + stormy,
+                                data=fishmarket)
+
+
+stargazer(quan_price_first_controls,quan_price_reduced_controls,quan_price_iv_controls,
+          type="html",
+          style="aer",
+          keep.stat=c("n","rsq","F"),
+          covariate.labels = c("Stormy Weather","Price","Rainy Weather","Cold Weather"),
+          dep.var.labels = c("Price","Quantity"),
+          model.names = FALSE,
+          digits = 2,
+          column.labels = c("(First Stage)","(Reduced Form)","(Second Stage)"))
+```
+
+We observe some small changes in the first stage coefficients, though considering the size of the sample this could very well be put on the quota for statistical error, and none of the included coefficients are significant (or large, compared to our regressor of interest [stormy]). 
+
+The second stage coefficients are virtually unchanged, though the standard error is quite a bit larger (this might happen when we include irrelevant variables). This should make us feel somewhat better about the instrument, though we can't completely rule out other potential worries (try to come up with a couple more).
+
+#### 7.
+
+```{r,warning=FALSE}
+quan_day_ols <- lm(quan / 1000 ~ mon + tue + wed + thu,
+                   data=fishmarket)
+
+stormy_day_ols <- lm(stormy ~ mon + tue + wed + thu,
+                     data=fishmarket)
+
+quan_price_day_first <- lm(price ~ stormy + mon + tue + wed + thu,
+                              data=fishmarket)
+
+quan_price_iv_day_iv <- ivreg(I(quan / 1000) ~ price + mon + tue + wed + thu | stormy + 
+                                  mon + tue + wed + thu,
+                              data=fishmarket)
+
+stargazer(quan_day_ols,stormy_day_ols,quan_price_day_first,quan_price_iv_day_iv,
+          type="text",
+          dep.var.labels = c("Quantity","Stormy Weather","Price","Quantity"),
+          covariate.labels = c("Stormy Weather","Price","Monday","Tuesday","Wednesday","Thursday"),
+          model.names = FALSE,
+          digits = 2,
+          column.labels = c("(OLS)","(OLS)","(First Stage)","(Second Stage)"),
+          keep.stat = c("n","rsq","F"))
+```
+
+
+Not a lot of change in the coefficient of interest (at least compared to the standard error). This follows from day of week not being correlated with wether the weather is stormy or not - thus we would believe that the day of week is not a source of omitted variable bias affecting the instrument in the IV-regression. The change in the coefficient on stormy in the first stage is also minor, since stormy is basically uncorrelated with day of week (which is probably not very surprising).
+
+
+### Estimating supply and demand
+
+#### 8. Extra:
+
+##### (a)
+
+We begin by generating the indicator variable.
+
+```{r}
+fishmarket <- fishmarket %>% 
+    mutate(lowdemand=factor(tue + wed))
+```
+
+Now we proceed by estimating the equations.
+
+```{r}
+price_stormy_lowdemand_ols <- lm(price ~ stormy + lowdemand,
+                             data=fishmarket)
+
+quan_stormy_lowdemand_ols <- lm(quan / 1000 ~ stormy + lowdemand,
+                                data=fishmarket)
+
+stargazer(price_stormy_lowdemand_ols,quan_stormy_lowdemand_ols,
+          type="text",
+          digits = 2,
+          dep.var.labels = c("Price","Quantity"),
+          covariate.labels = c("Stormy Weather","Low Demand Day"),
+          keep.stat = c("n","rsq"))
+```
+
+We see that quantity is significantly affected by low-demand days, while price is basically unaffected (also statistically insignificant). This seems to imply that, if low-demand days are not otherwise affecting supply (not excluded or not exogenous), then higher quantity demanded does not necessarily imply increased prices. If we were to try to instrument price in an equation for quantity supplied here, we would get a very erratic result, as the instrument is not actually passing a relevance test:
+
+```{r, results='asis'}
+quan_price_lowdemand_iv <- ivreg(I(quan / 1000) ~ price + stormy | lowdemand + stormy,
+                                 data=fishmarket)
+
+stargazer(quan_price_lowdemand_iv,
+          type="html",
+          dep.var.labels = "Quantity",
+          digits = 2,
+          covariate.labels = c("Price","Stormy Weather"),
+          keep.stat = c("n","rsq"))
+```
+
+At face value, the coefficient basically says supply explodes if price were to increase. The standard error also tells us that we cannot rule out the coefficient taking almost any value. This is one of those cases where we see from the results that something is off, due to a failure of relevance. Sometimes this is not so clear without inspecting the first stage, as the IV estimator has very bad properties in these cases, and could just as well give results which seems apparently okay.
+
+However, we could estimate the inverse supply relation as the price for fish as a function of the market equilibrium quantity, as the instrument is relevant for quantity. By remembering the IV-mechanics, we could already tell what the result is going to be from the two coefficients estimated above.
+
+##### (b)
+
+We estimate the first and second stage equations.
+
+```{r}
+price_quan_first <- lm(I(quan / 1000) ~ lowdemand + stormy,
+                       data=fishmarket)
+
+price_quan_iv <- ivreg(price ~ I(quan / 1000) + stormy | lowdemand + stormy,
+                       data=fishmarket)
+
+stargazer(price_quan_first,price_quan_iv,
+          type="text",
+          dep.var.labels = c("Quantity","Price"),
+          covariate.labels = c("Low Demand Day","Quantity","Stormy Weather"),
+          model.names = FALSE,
+          digits = 2,
+          column.labels = c("(First Stage)","(Second Stage)"),
+          keep.stat = c("n","rsq","F"))
+```
+
+The first stage tells us that the instrument does quite well on the relevance test. It shifts the endogenous regressor by a fair amount, the standard error is reasonably low (compared to the small sample size here), and the F-statistic for the regression is 12.21, which passes the heuristic test.
+
+The coefficient on quantity in this price regression tells us that price on the supply side is barely responding to quantity. This implies a close to perfectly elastic supply curve, which is shifted up or down by weather conditions (and other unobserved shocks).
+
+This could be reasonable if, for instance, the fishermen have a pretty good idea about what demand is going to be, and the next fish is basically just as costly to catch as the previous one (constant marginal cost), though the cost depends on the conditions (weather, and likely other, unmodelled ones, such as the location of the fish on a given day).
+
+##### (c)
+
+We want to extract the supply and demand equations from the estimated results. We begin with supply. Note that we need to refer to the quantity variable with the expression syntax used in the formula (also note that it would not have been wrong to rescale the quantity variable in the dataset for the whole exercise instead).
+
+```{r}
+price_quan_iv <- ivreg(price ~ I(quan / 1000) + stormy | lowdemand + stormy,
+                       data=fishmarket)
+
+intercept_supply <- price_quan_iv$coefficients["(Intercept)"]
+slope_supply <- price_quan_iv$coefficients["I(quan/1000)"]
+shift_supply <- price_quan_iv$coefficients["stormy"]
+
+```
+
+We can now generate the supply curves for stormy and non-stormy days as functions (learning to write your own functions can be very useful in R):
+
+```{r}
+supplycurve_nonstormy <- function(x) {
+    intercept_supply + slope_supply*x
+} 
+supplycurve_stormy <- function(x) {
+    intercept_supply + shift_supply + slope_supply*x
+    
+}
+```
+
+
+And now demand.
+
+```{r}
+quan_price_lowdemand_iv <- ivreg(I(quan / 1000) ~ price + lowdemand | stormy + lowdemand,
+                                 data=fishmarket)
+
+intercept_demand <- quan_price_lowdemand_iv$coefficients["(Intercept)"]
+slope_demand <- quan_price_lowdemand_iv$coefficients["price"]
+shift_demand <- quan_price_lowdemand_iv$coefficients["lowdemand1"]
+
+```
+
+To make the plotting easier, we solve the demand functions for price (since the plotting function we'll be using assumes that the function returns values for the vertical axis, given a value on the horizontal axis).
+
+For high demand days:
+$$\text{Demand}_{\text{high}} = \text{Intercept} + \text{Slope}\cdot\text{Price}  \\ 
+\text{Price} = -\frac{\text{Intercept}}{\text{Slope}} + \frac{1}{\text{Slope}}\cdot\text{Demand}_{\text{high}} $$
+
+For low demand days:
+$$\text{Demand}_{\text{low}} = \text{Intercept} + \text{Demand Shift} + \text{Slope}\cdot\text{Price}  \\ 
+\text{Price} = -\frac{\text{Intercept} + \text{Demand Shift}}{\text{Slope}} + \frac{1}{\text{Slope}}\cdot\text{Demand}_{\text{low}} $$
+
+Now we store the inverted functions.
+
+```{r}
+demandcurve_high <- function(x) {
+    -(intercept_demand/slope_demand) + x/slope_demand
+}
+
+demandcurve_low <- function(x) {
+    -(intercept_demand+shift_demand)/slope_demand + x/slope_demand
+}
+```
+
+We can now plot the functions.
+
+```{r,warning=FALSE}
+ggplot(data=data.frame(x=c(0,15),y=c(0,2)),aes(x=x,y=y)) +
+    stat_function(fun=supplycurve_nonstormy,
+                  aes(color="Supply",linetype="High")) +
+    stat_function(fun=supplycurve_stormy,
+                  aes(color="Supply",linetype="Low")) +
+    stat_function(fun=demandcurve_high,
+                  aes(color="Demand",linetype="High")) +
+    stat_function(fun=demandcurve_low,
+                  aes(color="Demand",linetype="Low")) +
+    scale_y_continuous(limits=c(0,2)) +
+    scale_color_brewer(name="Curve",palette = "Set1") +
+    scale_linetype_discrete(name="Level") +
+    scale_x_continuous(breaks=seq(0,15,5)) +
+    labs(x="Quantity (1000 pounds)",y="Price (USD)")
+```
+Now that we are done with the fish market data, we can remove all the objects we have in memory.
+
+```{r}
+rm(list=ls())
+```
+
+
+## Nord pool spot: The electricity wholesale market
+
+We can now load the Nord pool data.
+
+```{r,message=FALSE}
+elmarket <- read_csv("elmarket.csv")
+```
+
+### Data Wrangling
+
+#### 1.
+
+We need to load the population datasets.
+
+```{r,message=FALSE}
+norpop <- read_csv("norpop.csv",col_names = FALSE)
+colnames(norpop) <- c("city","population")
+
+
+swepop <- read_csv("swepop.csv",col_names = FALSE)
+colnames(swepop) <- c("city","population")
+```
+
+```{r}
+tempdata <- elmarket %>%
+    select(-c(price,volume,hydrores)) %>% 
+    gather(key="city",value="temperature",-time)
+```
+
+```{r}
+nortempdata <- inner_join(x=tempdata,y=norpop,by=c("city"="city"))
+
+nortempdata <- nortempdata %>% 
+    group_by(time) %>% 
+    summarize(nortemp=weighted.mean(temperature,w=population))
+
+swetempdata <- inner_join(x=tempdata,y=swepop,by=c("city"="city"))
+
+swetempdata <- swetempdata %>% 
+    group_by(time) %>% 
+    summarize(swetemp=weighted.mean(temperature,w=population))
+
+elmarket <- left_join(x=elmarket,y=nortempdata,
+                      by=c("time"="time"))
+
+elmarket <- left_join(x=elmarket,y=swetempdata,
+                      by=c("time"="time"))
+
+rm(tempdata,norpop,nortempdata,swepop,swetempdata)
+
+```
+
+
+### Present and understand your data
+
+#### 2.
+
+We first make descriptive statistics for price, volume and magazine capacity. To make volume "better" scaled, we rescale it from MWh to GWh by first dividing by 1000:
+```{r}
+elmarket <- elmarket %>% mutate(volume = volume / 1000)
+```
+
+
+```{r}
+summarydata <- elmarket %>% 
+    select(price,volume,hydrores)
+
+stargazer(as.data.frame(summarydata),
+          type="text",
+          digits = 2,
+          covariate.labels = c("Price (EUR/MWh)","Volume (GWh)","Magazine Capacity (TWh)"))
+
+rm(summarydata)
+```
+
+We now make tables for temperatures in the Norwegian and Swedish areas. Here we utilize the fact that the Norwegian and Swedish temperatures are next to each other in the dataset, note that this way of doing it would not work if we reordered the variables. We begin with the Norwegian temperatures.
+
+```{r}
+nortemps <- elmarket %>% 
+    select(Fredrikstad:Tromso) 
+
+stargazer(as.data.frame(nortemps),
+          type="text",
+          digits=1)
+
+rm(nortemps)
+```
+And now Sweden:
+
+```{r}
+swetemps <- elmarket %>% 
+    select(Goteborg:Uppsala) 
+
+stargazer(as.data.frame(swetemps),
+          type="text",
+          digits=1)
+
+rm(swetemps)
+```
+
+#### 3.
+
+We begin by calculating the values we will be plotting. 
+
+```{r}
+weekdata <- elmarket %>% 
+    mutate(week=floor_date(time,
+                           unit = "1 week",
+                           week_start = 1)) %>% 
+    group_by(week) %>% 
+    summarize(meanvolume=mean(volume),
+              meanprice_weighted=weighted.mean(price,w=volume),
+              nortemp=mean(nortemp),
+              swetemp=mean(swetemp),
+              hydrores=mean(hydrores))
+```
+
+We can now plot average volume and average volume weighted price. Because these both have to do with volume we combine them in one plot. Those of you familiar with Stata will find that having a separate y axis is more complicated in ggplot2 because Hadley Wickham (a key developer of the tidyverse) thinks they are problematic.
+
+```{r}
+ggplot(data=weekdata,aes(x=week)) +
+    geom_line(aes(y=meanprice_weighted,color="Volume Weighted Price")) +
+    geom_line(aes(y=meanvolume,color="Volume")) +
+    scale_y_continuous(sec.axis = dup_axis(name="Volume (GWh)")) +
+    scale_color_brewer(name="Variable",
+                       palette = "Set1",
+                       guide = guide_legend(ncol=2)) +
+    labs(x="Weekly Date",y="Volume Weighted Price (EUR/MWh)") +
+    theme(axis.title.y.right = element_text(angle=90),
+          legend.position = "bottom",
+          legend.direction = "vertical",
+          legend.title.align = 0.5)
+```
+
+We proceed by plotting the average temperatures in Norway and Sweden.
+
+```{r}
+
+weekdata %>% 
+    select(week,"Norway" = nortemp,"Sweden"=swetemp) %>% 
+    gather(key="Country",value="Temperature",-week) %>% 
+    ggplot(aes(x=week,y=Temperature,color=Country,linetype=Country)) +
+    geom_line() +
+    scale_color_brewer(palette = "Set1") +
+    labs(x="Weekly Date")
+
+```
+
+Lastly we plot the hydro reservoir capacity.
+
+```{r,warning=FALSE}
+ggplot(data=weekdata,aes(x=week,y=hydrores)) +
+    geom_line() +
+    labs(x="Weekly Date",y="Hydro Reservoirs (TWh)")
+
+rm(weekdata)
+```
+
+
+In this question one should note the strong seasonality, particularly in volume, hydro reservoir content and temperature, explain how it fits together. One should also note that prices display much less seasonality than the other series (and then, preferably try to have an explanation for this, for instance showing some seasonally adjusted series, and see whether, for instance, the residual variation in hydrores seems to correlate well with the residual variation in prices).
+
+#### 4.
+
+Again we begin by calculating the values we want to plot.
+
+```{r}
+hourdata <- elmarket %>%
+    mutate(hour=hour(time)) %>% 
+    group_by(hour) %>% 
+    summarize(meanvolume=mean(volume),
+              meanprice_weighted=weighted.mean(price,w=volume),
+              nortemp=mean(nortemp),
+              swetemp=mean(swetemp))
+```
+
+
+We can now plot the average volume per hour of the day. 
+
+```{r}
+ggplot(data=hourdata,aes(x=hour,y=meanvolume)) +
+    geom_point() +
+    labs(x="Hour",y="Average Volume (GWh)") +
+    scale_x_continuous(breaks=seq(0,24,2))
+```
+
+We proceed by plotting the volume weighted price per hour of the day.
+
+```{r}
+ggplot(data=hourdata,aes(x=hour,y=meanprice_weighted)) +
+    geom_point() +
+    labs(x="Hour",y="Volume Weighted Price (EUR/MWh") +
+    scale_x_continuous(breaks=seq(0,24,2))
+```
+
+Now the temperatures.
+
+```{r}
+hourdata %>% 
+    select(hour,"Norway"=nortemp,"Sweden"=swetemp) %>% 
+    gather(key="Country",value="Temperature",-hour) %>% 
+    ggplot(aes(x=hour,y=Temperature,color=Country,linetype=Country)) +
+    geom_line() +
+    scale_x_continuous(breaks=seq(0,24,2)) +
+    labs(x="Hour",y="Average Temperature") +
+    scale_color_brewer(palette = "Set1")
+```
+
+Lastly we plot the volume weighted hourly price against the the average hourly volume.
+
+```{r}
+ggplot(data=hourdata,aes(x=meanvolume,y=meanprice_weighted)) +
+    geom_point() +
+    labs(x="Average Volume (GWh)",y="Volume Weighted Price (EUR/MWh)")
+
+rm(hourdata)
+```
+
+Here one should note the natural pattern in volume over the hours. Volumes are lowest during the night,
+and highest during the morning and afternoon. Prices exhibit the exact same
+pattern as volumes, and (if one is willing to interpret a lot) seems to
+have a slightly faster change across high and low hours (if we interpret this
+as the movements along the supply curve as demand shifts, it would tell us
+something about the slope of supply).
+
+Temperature follows exactly the pattern we would expect, though the interesting
+thing to note is that temperature is positively correlated with volume over
+the hours of the day, which is opposite of the negative correlation we see
+between temperature and volume over the seasons. We would expect the causal impact of
+temperature on volume to be negative (though if temperatures
+get very high, volumes could increase due to cooling, though this is rare in
+the Nordic region). This means that the dummies for hour will tend to pick up
+some of the effect of temperature, if temperature is not included in the
+regression (omitted variable formula), and vice versa for temperature.
+We'll see further down how this can create a problem for IV estimation if
+we don't account for this.
+
+The scatter of average volume per hour against average price per hour tells us
+how volume and price are covarying when we look at the variation in them driven
+by hour (not controlling for other factors). This is very much related to what
+an IV estimation is doing, and a regression through these points would give a
+parameter which is close to what we get from an IV regression of volume on price
+instrumented by dummies for the hour of the day (there are some differences in
+how the different points will be weighted), and we can also see from the plot
+that a linear approximation to the conditional expectation of volume as a function
+of price will fit very well when viewed through the variation "induced" over the
+hours of the day. The plot is the visual IV plot (note that this does not
+necessarily mean that hour is a good IV - the VIV is just a device which can be
+useful for inspecting a potential IV), which we examine closer in task 11.
+
+
+#### 5.
+Many points have already been raised in the comments after 3. and 4.
+More directly on supply and demand factors, we would think temperature and
+hour of the day corresponds to demand side factors, while the hydro reservoirs
+will affect the supply side. The season (loosely defined - e.g., month) is a
+very strong predictor for the hydro reservoirs, though the season will also
+have a very strong influence on demand, such that we cannot necessarily put
+"the season" (e.g., dummies for month) as a pure supply shifter. Maybe the
+effect of season on demand is removed once we control for temperature,
+for instance if we believe that the causal path is:
+season -> temperature -> demand,
+such that controlling for temperature will break the dependence between season
+and demand (not that this is not testable, since if season still affects supply,
+we would still expect to see a change in volume - this is an exclusion restriction).
+
+It doesn't seem like hydro reservoir stock has an obvious relation to price when
+we look at the total variation in the stock, which is why we will explore
+residual variation (after controlling for one or more factors) in the hydro stock in 7.
+
+#### 6.
+
+We want to include indicators for month and year, in R this can be handled with factor variables.
+
+```{r}
+elmarket <- elmarket %>% 
+    mutate(month=factor(month(time)),
+           year=factor(year(time)))
+```
+
+
+We proceed by estimating the equations and obtaining the residuals.
+
+```{r}
+volume_nortemp_fit <- lm(volume ~ nortemp,
+                     data=elmarket)
+
+volume_nortemp_res <- residuals(volume_nortemp_fit)
+
+volume_nortemp_month_fit <- lm(volume ~ nortemp + month,
+                               data=elmarket)
+
+volume_nortemp_month_res <- residuals(volume_nortemp_month_fit)
+
+volume_nortemp_month_year_fit <- lm(volume ~ nortemp + month + year,
+                               data=elmarket)
+
+volume_nortemp_month_year_res <- residuals(volume_nortemp_month_year_fit)
+
+rm(volume_nortemp_fit,volume_nortemp_month_fit,volume_nortemp_month_year_fit)
+
+```
+
+We now add the average volume to the residuals.
+
+```{r}
+meanvolume <- mean(elmarket$volume) 
+
+volume_nortemp_res <- volume_nortemp_res + meanvolume
+
+volume_nortemp_month_res <- volume_nortemp_month_res + meanvolume
+
+volume_nortemp_month_year_res <- volume_nortemp_month_year_res + meanvolume
+
+rm(meanvolume)
+```
+
+Now we can make the plots, beginning with the original series.
+
+```{r}
+elmarket %>% 
+    mutate(week=floor_date(time,
+                           unit="1 week",
+                           week_start = 1)) %>%
+    group_by(week) %>% 
+    summarize(volume=mean(volume)) %>% 
+    ggplot(aes(x=week,y=volume)) +
+    geom_line() +
+    labs(x="Weekly Date",y="Volume")
+    
+```
+
+And now we plot the residualized series.
+
+```{r}
+tibble(time=elmarket$time,
+                   volume_nortemp_res,
+                   volume_nortemp_month_res,
+                   volume_nortemp_month_year_res) %>% 
+    mutate(week=floor_date(time,
+                           unit="1 week",
+                           week_start = 1)) %>% 
+    select(-time) %>% 
+    rename("Residualized - Temperature"=volume_nortemp_res,
+           "Residualized - Temperature & Month"=volume_nortemp_month_res,
+           "Residualized - Temperature, Month & Year"=volume_nortemp_month_year_res) %>% 
+    gather(key="Series",value="Volume",-week) %>% 
+    group_by(week,Series) %>% 
+    summarize(Volume=mean(Volume)) %>% 
+    ggplot(aes(x=week,y=Volume,color=Series,linetype=Series)) +
+    geom_line() +
+    theme(legend.position = "bottom",
+          legend.direction = "vertical",
+          legend.title.align = 0.5) +
+    labs(x="Weekly Date") +
+    scale_color_brewer(palette = "Set1")
+
+```
+
+We see that most of the variation in the volume series can be captured by
+temperature. There is still a fair bit of variation left after this, some of
+which is a noticable time-trend in volume over time, while some seems to be a
+systematically higher volume during the first month and a half of the year, as
+well as some of December. This could be driven by supply factors, as this is
+a period where hydro reserves are typically still quite high (we need to think
+carefully about this, though, because the producers take into account expecations
+about reserves and demand when making their decisions). It could also be the case
+that controlling for the average temperature across Norway and Sweden does not
+capture everything, as the peak in the first weeks of 2016 for the series might
+point to - a period when Eastern Norway and Oslo was unusually cold, while the
+rest of Norway wasn't necessarily that cold (this is related to a question of
+what "controlling for" or "partialling out" something really means - we're not
+necessarily capturing everything that has with temperature to do by just a simple
+measure of temperature).
+
+When adding control for month, we see that the within-year pattern is largely
+removed. This might mean that we're capturing supply side factors, that we're
+better capturing some of the variation driven by temperature which our average
+measure is not doing a good job in controlling for, or that there are some
+separate seasonal effects in demand which is not related to temperature. This is
+not necessarily important for identifying the price-coefficient, but if we want
+to forecast the demand curve itself (separate from what happens to supply),
+this could be important.
+
+When we add controls for year, there is no longer a discernible trend in volumes,
+though there could still be some within-year trend (which we could test for here,
+if we wanted to), even though it's hard to see from the plot.
+
+Even after including these controls, there is still variation in the volumes,
+which can either be driven by changes in supply, or demand side factors which are
+still unobserved (we could possibly try to add some from our data, but this is
+outside of the scope of this exercise).
+
+The main point here is that residualizing and plotting can be an efficient way
+of learning about the data set, though it doesn't free us from the need of
+thinking carefully about what is the right way of understanding the market and
+the data we have.
+
+#### 7.
+
+We start by estimating the equations and obtaining the residuals.
+
+```{r}
+hydrores_nortemp_fit <- lm(hydrores ~ nortemp,
+                     data=elmarket)
+
+hydrores_nortemp_res <- residuals(hydrores_nortemp_fit)
+
+hydrores_nortemp_month_fit <- lm(hydrores ~ nortemp + month,
+                               data=elmarket)
+
+hydrores_nortemp_month_res <- residuals(hydrores_nortemp_month_fit)
+
+hydrores_nortemp_month_year_fit <- lm(hydrores ~ nortemp + month + year,
+                               data=elmarket)
+
+hydrores_nortemp_month_year_res <- residuals(hydrores_nortemp_month_year_fit)
+
+rm(hydrores_nortemp_fit,hydrores_nortemp_month_fit,hydrores_nortemp_month_year_fit)
+
+```
+
+We now add the average hydrores to the residuals.
+
+```{r}
+meanhydrores <- mean(elmarket$hydrores,na.rm=TRUE) 
+
+hydrores_nortemp_res <- hydrores_nortemp_res + meanhydrores
+
+hydrores_nortemp_month_res <- hydrores_nortemp_month_res + meanhydrores
+
+hydrores_nortemp_month_year_res <- hydrores_nortemp_month_year_res + meanhydrores
+
+rm(meanhydrores)
+```
+
+Now we can make the plots, beginning with the original series (hydro reservoir variable is missing initially in the sample, so if we do not filter them out, the following code runs but issues a warning).
+
+```{r}
+elmarket %>% filter(!is.na(hydrores)) %>% 
+    mutate(week=floor_date(time,
+                           unit="1 week",
+                           week_start = 1)) %>%
+    group_by(week) %>% 
+    summarize(hydrores=mean(hydrores)) %>% 
+    ggplot(aes(x=week,y=hydrores)) +
+    geom_line() +
+    labs(x="Weekly Date",y="Hydro Reservoirs")
+    
+```
+And now we plot the residualized series.
+
+```{r}
+tibble(time=elmarket[!is.na(elmarket$hydrores),]$time,
+                   hydrores_nortemp_res,
+                   hydrores_nortemp_month_res,
+                   hydrores_nortemp_month_year_res) %>% 
+    mutate(week=floor_date(time,
+                           unit="1 week",
+                           week_start = 1)) %>% 
+    select(-time) %>% 
+    rename("Residualized - Temperature"=hydrores_nortemp_res,
+           "Residualized - Temperature & Month"=hydrores_nortemp_month_res,
+           "Residualized - Temperature, Month & Year"=hydrores_nortemp_month_year_res) %>% 
+    gather(key="Series",value="hydrores",-week) %>% 
+    group_by(week,Series) %>% 
+    summarize(hydrores=mean(hydrores)) %>% 
+    ggplot(aes(x=week,y=hydrores,color=Series,linetype=Series)) +
+    geom_line() +
+    theme(legend.position = "bottom",
+          legend.direction = "vertical",
+          legend.title.align = 0.5) +
+    labs(x="Weekly Date",y="Hydro Reservoirs (TWh)") +
+    scale_color_brewer(palette = "Set1")
+
+```
+
+Very little of the total variation in hydro reservoirs can be captured by
+temperature. There's a tendency for hydro reserves to be higher when temperature
+is higher (which explains the changes in the series when residualized with respect
+to temperature), though it's not certain what we should think about this. We would
+believe hydro reservoirs are very sensitive to rain (and also snow, when it melts
+afterwards), which could also be correlated with temperature (possibly in a very
+non-straightforward manner). The interesting thing to note here is that this
+tells us that the variation in volume throughout the year captured by temperature
+only has a minor effect on the cycle of water in the reservoirs (though it doesn't
+mean that the effect of changing volumes is unimportant - just that it is dominated
+by other factors for the stock). If we rather looked at something like the change
+in the reservoirs, we would probably see a much clearer link to temperature
+(stock versus flow).
+
+Month captures a very high share of the variation, which is not surprising when
+inspecting the plot. Over time, this is driven by the fluctuations in volume
+(making the increase or decrease change in size), as well as the seasons with
+typically more or less rain and snow melt.
+
+Controlling for years do not change much here, though it becomes apparent that
+there has been an increasing trend in water in reservoirs over these years (from
+comparing the two residualized series). It's not obvious here that year fundamentally
+belongs in the supply equation, as this could well capturing an increase in
+precipitation over the years which was higher than expected, which we would
+expect to actually have a negative impact on price (everything else equal).
+(In the same vein, it's not certain that the change in volume over the years
+represents a trend in demand, as it could be driven by the lower average prices
+over the year)
+
+A nice thing to do here, to assess how hydro reservoir stock potentially affects
+price (at least the covariation), would be to show the series of prices
+residualized with the same variables, and see whether the result is as expected.
+(Feel free to do this - one residualized series for price and one for hydrores,
+e.g., with respect to temperature, month and year. You should see a pattern where
+prices tend to be lower, the larger the residual water stock is.)
+
+A further comment:
+You might notice the seeming negative autocorrelation pattern in this series,
+where reservoir either decreases before jumping up or vice versa, this is driven
+by subtracting the monthly averages, while hydro reservoir is measured weekly. In
+months where the stock is decreasing, we will tend to see a decrease throughout
+the month, while in months where the stock is increasng, we will see the opposite
+pattern. Controlling for the week would remove this (e.g., dummy for each week
+number of the year).
+
+### Estimating supply and demand
+
+#### 8.
+
+We need to generate a factor varialbe for hours of the day.
+
+```{r}
+elmarket <- elmarket %>% 
+    mutate(hour=factor(hour(time)))
+```
+
+
+
+We estimate a few different specifications here and discuss them to understand what is going on. Here we use the `summary` function to get a more compact table of results.
+
+```{r}
+supply_iv_hourcont <- ivreg(volume ~ price + hydrores + hour + month + year | 
+                                    nortemp + swetemp + hydrores + hour + month + year,
+                                data=elmarket)
+
+summary(supply_iv_hourcont)
+```
+
+Note that not controlling for hour weakens the relationship between price and volume.
+This is related to an issue we saw before, that volume is driven by temperature,
+but also varies across the hours of the day (due to the natural reasons), while
+temperature also varies across the hours of the day in a very predictable fashion
+that is quite correlated with the low-period during the night. That means we
+have an endogeneity problem when not including hours. This is a good example
+of a violation of exogeneity, rather than exclusion. Temperature most likely
+doesn't have a direct effect on supply, and should really be excluded, while
+it might fail on exogeneity due to correlation with unobserved factors
+affecting supply. This is a somewhat tricky example, at least if we believe
+hour of the day is actually excluded from supply (following the argument
+below). The reason for the problem is that if hour is included neither as a
+control (something we believe will have a direct effect on supply), nor as an
+instrument (something we believe will affect supply through it's effect on price),
+then it will be left in unobserved factors. Since it does have an effect on supply
+(possibly only through it's effect on demand), then we will have an omitted variable
+problem (since it is correlated with our instruments).
+
+```{r, results='asis', warning=FALSE}
+supply_iv_nohour <- ivreg(volume ~ price + hydrores + month + year | 
+                                    nortemp + swetemp + hydrores + month + year,
+                                data=elmarket)
+
+stargazer(supply_iv_nohour, supply_iv_hourcont,
+          type='html',
+          omit = 'hour', omit.labels = c('Hour FE'),
+          digits=2,
+          keep.stat = c('n', 'rsq'))
+```
+
+This does not mean that the hour of the day actually belongs in the supply
+function. There is no reason to believe that costs in power production are
+changing noticably during the day, since it's not sensitive to temperature, and
+the changes in the shadow value of water within a day should be small. Labor costs
+could be higher during odd hours, but it is highly unlikely that this feeds into
+any marginal production decisions in this capital intensive process.
+Controlling for hour in this way (if it's actually excluded) will make us
+attribute shifts in the demand curve to the supply curve, though this should
+not necessarily have an impact on the estimated slope. The difference in
+the slope estimate when changing the instrument set should make us worried.
+Note that a reason for why the price-parameter estimate changes when you
+include hour as an instrument rather than a control, could be due to functional
+form. The changes we see in demand from hourly changes could cause shifts along
+the supply curve where the slope is on average different, than the average slope
+of supply in the different points we visit as the demand curve shifts due to
+temperature. This could potentially be tested, for instance by looking at
+whether the slope of price is different across the hours (using temperature in
+each hour as an instrument - note: requires that the instrument is uncorrelated
+with unobserved factors every hour), though this is outside the scope of this exercise.
+
+```{r}
+supply_iv_hourinst <- ivreg(volume ~ price + hydrores + month + year | 
+                                    nortemp + swetemp + hydrores + hour + month + year,
+                                data=elmarket)
+
+stargazer(supply_iv_hourinst,
+          type='text',
+          digits=2,
+          omit = c('month', 'year'), omit.labels = c('Month FE', 'Year FE'),
+          notes = c("Instruments: Temperature in Norway and Sweden,", "and indicators for hour of day"),
+          notes.align = 'l',
+          keep.stat = c('n', 'rsq'))
+```
+
+We can also calculate the elasticity of supply with respect to price at the average volume and price in the sample:
+
+```{r}
+supply_iv_hourinst$coefficients[["price"]]*mean(elmarket$price)/mean(elmarket$volume)
+```
+
+#### 9.
+We choose to control for temperature, hour, month and year. Temperature and hour seem very likely to be included in demand, while month and year are arguably not excluded (additional seasonal effects, and increases in demand over time). The hydro reservoir instrument will then only utilize the variation left after partialling out the included variables (the controls works the same way as in ordinary regression, also when considering their impact on the instrument).
+
+```{r}
+demand_iv <- ivreg(volume ~ price + nortemp + swetemp + hour + month + year | 
+                       hydrores + nortemp + swetemp + hour + month + year,
+                   data=elmarket)
+```
+
+We can now calculate the elasticity of demand with respect to price at average volume and price:
+
+```{r}
+demand_iv$coefficients[["price"]]*mean(elmarket$price)/mean(elmarket$volume)
+```
+
+We see that demand is very inelastic (far below one in elasticity).
+
+
+Lastly, we make a table with the estimated demand and supply functions keeping only the coefficients of interest (note
+that what "is of interest" depends on the application, and one could very well be interested in some of the time-coefficients).
+
+```{r, warning=FALSE, results="asis"}
+stargazer(demand_iv,supply_iv_hourinst,
+          type = "html",
+          style = "aer",
+          digits = 2,
+          covariate.labels = c("Price","Temperature Norway",
+                               "Temperature Sweden","Hydro Reservoirs"),
+          dep.var.labels = c("Volume"),
+          column.labels = c("(Demand)","(Supply)"),
+          omit = c("hour","month","year"),
+          omit.labels = c("Hour FE","Month FE","Year FE"),
+          keep.stat=c("n","rsq"))
+```
+
+Up until this point we have used default standard errors, which are likely not valid as explained in the lecture. We will now show a few examples of how we can obtain alternative estimates of standard errors. We will do this for the supply equation.
+
+We use functions from the ivpack package to compute the enw standard errors. First we calculate heteroscedasticity robust standard errors:
+
+```{r}
+library(ivpack)
+
+robust <- robust.se(supply_iv_hourinst)
+
+```
+
+We can also calculate cluster robust standard errors. Clustering of residuals basically allows the residuals to have arbitrary correlation within a cluster (any form of autocorrelation and heteroskedasticity, but only within the cluster). Choose a quite "aggressive" clustering, by letting errors be correlated in any way within each week of the sample (not
+week number of the year, but week by week):
+
+```{r}
+elmarket <- elmarket %>% 
+    mutate(week=floor_date(time,
+                    unit="1 week",
+                    week_start = 1))
+
+cluster <- cluster.robust.se(supply_iv_hourinst,elmarket[!is.na(elmarket$hydrores),]$week)
+```
+
+Note that this assumes that there is no correlation between clusters, which
+doesn't necessarily fit the structure of the dataset too well, but this
+example is mostly for illustration.
+
+For comparison, we can make a new table where we compare the different standard errors:
+
+```{r, results="asis"}
+stargazer(supply_iv_hourinst,supply_iv_hourinst,supply_iv_hourinst,
+          type="html",
+          digits = 2,
+          omit = c("hour","month","year"),
+          omit.labels = c("Hour FE","Month FE","Year FE"),
+          covariate.labels = c("Price","Hydro Reservoirs"),
+          dep.var.labels = c("Volume"),
+          column.labels = c("Default","Robust","Clustered"),
+          keep.stat=c("n","rsq"),
+          se=list(NULL,robust[,2],cluster[,2])) #The standard errors are stored in the second column of the coeftest objects
+```
+
+We see that the standard errors become substantially larger once we move away from the default. 
+
+#### 10.
+
+We use the functions stat_summary_bin to plot average values of volume for 100 temperature bins. We also add a linear fit to the plot to clarify whether or not the relationship seems linear. 
+
+```{r}
+ggplot(data=elmarket,aes(x=nortemp,y=volume)) +
+    stat_summary_bin(fun.y="mean",bins=100,geom=c("point")) +
+    geom_smooth(method="lm",se = FALSE) +
+    labs(x="Temperature",y="Volume")
+```
+
+When assessing instruments, where we will often add a linear specification of the instrument
+(at least as a start), which means that this can be useful for assessing how
+appropriate a linear specification is. In this case, there's some apparent
+deviations from a linear relationship from temperatures higher than 10 degrees.
+This should make us think hard about why that is, and not - as some are tempted
+to do - try to find another functional form for the relationship which will fit
+better in a statistical sense (at least before we are sure about the underlying
+causes creating the deviation from linearity). This doesn't mean that we're
+always seeking linearity, but we should be sure that non-linearities are due
+to a causal relationship, and not driven by omitted variable bias.
+
+From what we've seen earlier, the hour of the day is correlated with both volume
+and temperature in a very specific way (and is actually the major cause of the
+non-linearity after 10 degrees).
+
+
+We now plot the same relationship after residualizing the variables with respect to hour of the day. In this case we specify how we want to obtain the residuals within the ggplot function, but we could also have obtained the residuals in a separate step and given them as an argument to ggplot. 
+
+```{r}
+ggplot(data=elmarket,
+       aes(x=residuals(lm(nortemp ~ hour,
+                          data=elmarket)),
+           y=residuals(lm(volume ~ hour,
+                          data=elmarket)))) +
+    stat_summary_bin(fun.y="mean",bins=100,geom="point") +
+    geom_smooth(method="lm",se=FALSE) +
+    labs(x="Residualized Temperature",y="Residualized Volume")
+
+```
+
+We see that "partialling out" hour gives us a relationship which seems to be
+closer to linear, and it is also very "tight" (no large jumps in the y-value
+from one consecutive bin to another - this is to some extent driven by the
+relatively large amount of observations in this data set, but also the fact that
+the relationship between temperature and volume is very strong). If this was
+the only plot we relied on to assess how to enter temperature into the demand
+equation, we would have little reason to use another functional relation than
+the standard linear.
+
+The deviations from linear becomes even smaller (in an absolute sense) if we
+also add other time-controls from the demand equation above:
+
+```{r}
+ggplot(data=elmarket,
+       aes(x=residuals(lm(nortemp ~ hour + month + year,
+                          data=elmarket)),
+           y=residuals(lm(volume ~ hour + month + year,
+                          data=elmarket)))) +
+    stat_summary_bin(fun.y="mean",bins=100,geom="point") +
+    geom_smooth(method="lm",se=FALSE) +
+    labs(x="Residualized Temperature",y="Residualized Volume")
+```
+
+It is useful to note that the range of the x-axis becomes quite a bit narrower when adding the additional time controls (This is also a nice illustration of what control variables do, i.e., removing variation in "all" variables of interest, here for both temperature and volume).
+
+Now we go through the same steps for price. 
+
+```{r}
+ggplot(data=elmarket,aes(x=nortemp,y=price)) +
+    stat_summary_bin(fun.y="mean",bins=100,geom=c("point")) +
+    geom_smooth(method="lm",se = FALSE) +
+    labs(x="Temperature",y="Price")
+```
+
+Looking at the relationship between price and temperature is basically doing a visual inspection of the first stage. Without controls, seems to suggest a quite non-linear relationship (Note that when we talk about "non-linear" v.s. "linear" in regressions, it is a statement about the conditional expectation function, which is what such "bin and scatter" strategies show us an approximation of. If you were to do the raw scatter, there is a lot of variation around the expectation. Though we would like to capture as much of this as possible, everything else equal, it's somewhat separate from our first order concern: "Are we getting what we need?")
+
+We now plot the same relationship after residualizing with respect to hour of the day.
+
+
+```{r}
+ggplot(data=elmarket,
+       aes(x=residuals(lm(nortemp ~ hour,
+                          data=elmarket)),
+           y=residuals(lm(price ~ hour,
+                          data=elmarket)))) +
+    stat_summary_bin(fun.y="mean",bins=100,geom="point") +
+    geom_smooth(method="lm",se=FALSE) +
+    labs(x="Residualized Temperature",y="Residualized Price")
+```
+We see that the relationship still displays quite strong non-linearities. Still, resist the temptation to do this:
+```{r}
+ggplot(data=elmarket,
+       aes(x=residuals(lm(nortemp ~ hour,
+                          data=elmarket)),
+           y=residuals(lm(price ~ hour,
+                          data=elmarket)))) +
+    stat_summary_bin(fun.y="mean",bins=100,geom="point") +
+    geom_smooth(method="lm",
+                formula=y ~ poly(x,2),
+                se=FALSE) +
+    labs(x="Residualized Temperature",y="Residualized Price")
+```
+
+which fits a quadratic specification. It fits better, but that doesn't mean that it's the correct relationship from a causal perspective. Rather, check what happens if we residualize more extensively:
+
+```{r}
+ggplot(data=elmarket,
+       aes(x=residuals(lm(nortemp ~ hour + month + year,
+                          data=elmarket)),
+           y=residuals(lm(price ~ hour + month + year,
+                          data=elmarket)))) +
+    stat_summary_bin(fun.y="mean",bins=100,geom="point") +
+    geom_smooth(method="lm",se=FALSE) +
+    labs(x="Residualized Temperature",y="Residualized Price")
+```
+This seems better, and furthermore, we expect there to be important
+drivers of price, at least over months (picking up season), which is correlated
+with temperature in a way which is not necessarily telling us about how price
+is changing as shifts in the demand curve due to temperature moves us along
+the supply curve (the first stage interpretation we desire in this case).
+
+To be completely in line with this interpretation, we should actually control
+for any variable we believe are not excluded from the supply function, such
+as hydro reservoirs. Doing this with such a binned scatterplot is easy enough, but we will
+look further into a proper Visual IV plot below.
+
+#### 11.
+
+##### (a)
+
+We begin with volume and price.
+
+```{r}
+elmarket %>% 
+    select(nortemp,price,volume) %>% 
+    rename("Price"=price,"Volume"=volume) %>% 
+    mutate(Volume=Volume) %>% 
+    gather(key="Variable",value="Value",-nortemp) %>% 
+ggplot(aes(x=nortemp,y=Value,color=Variable)) +
+        stat_summary_bin(fun.y="mean",binwidth=1,geom="point") +
+    scale_color_brewer(palette = "Set1") +
+    labs(x="Temperature")
+```
+
+
+And now the number of observations in each bin:
+
+```{r}
+ggplot(data=elmarket,aes(x=nortemp,y=volume)) +
+    stat_summary_bin(fun.y=function(y) length(y),binwidth=1,geom="col") +
+    labs(x="Temperature",y="Observations")
+```
+
+
+Lastly we plot average volume and price against each other:
+
+```{r}
+elmarket %>% 
+    mutate(tempbin=cut_width(nortemp,width=1,boundary=-13)) %>% 
+    group_by(tempbin) %>% 
+    summarize(meanvolume=mean(volume),
+              meanprice=mean(price)) %>% 
+    ggplot(aes(x=meanvolume,y=meanprice)) +
+    geom_point() +
+    labs(x="Volume",y="Price")
+```
+
+From these plots, we see that the relationships do not look too bad. All the way
+up to 10 degrees temperature, both price and volume tend to fall, while they show a
+weak increase afterwards. If we believed there were no problems with omitted
+variables here, this would be encouraging in the sense of showing that the IV
+basically does the right thing. From the arguments in 10., we know that there
+are quite likely issues with omitted variables here (which we will take care of
+below - at least for the ones we can observe), and it thus serves as a nice
+example of the limits to what we can hope to learn from the VIV plot.
+
+There are some deviations, particularly for very low temperatures, but if we
+look at the small number of observations in these bins, we should expect 
+more "noise" there. The plot for price is showing us the basis for the
+first stage in a more refined manner than just regressing price on
+temperature, such that we can consider both functional form issues, if the
+relationship is as we expect, and how noisy or stable it seems to be (here the
+relationship doesn't look particularly noisy, though this is often a function of
+how many observations we have in each bin). The plot for volume is showing us the
+reduced form - the basis for a regression of the dependent variable on the
+instrument. If we believe exogeneity and the exclusion restriction, this shows
+us the change in volume that is induced by temperature, through its effect on
+prices.  If the "first stage"-plot is easy to interpret, we can basically guess
+how the VIV-plot (volume versus price as averages within bins of temperatures)
+will look like, so this is not necessarily as important as the two other plots,
+but can be useful to consider to see whether the instrument moves the dependent
+variable as it should, if it's actually working through price.
+
+One could calculate the standard error of the mean estimate within each bin and add error bars to formally show
+how uncertain we should consider the pattern in the plot. Below is a coded example
+of this.
+
+```{r}
+elmarket %>% 
+    select(nortemp,price,volume) %>% 
+    rename("Price"=price,"Volume"=volume) %>% 
+    mutate(Volume=Volume) %>% 
+    gather(key="Variable",value="Value",-nortemp) %>% 
+ggplot(aes(x=nortemp,y=Value,color=Variable)) +
+        stat_summary_bin(fun.data="mean_se",binwidth=1,geom="pointrange") +
+    scale_color_brewer(palette = "Set1") +
+    labs(x="Temperature")
+```
+
+The plot of price against volume, where each point represents the average within
+a temperature bin, basically shows us the relationship between the when "filtered"
+through temperature (the covariation in them when we think about temperature
+shifting them around simultaneously). This can be thought of as showing the basis
+for the IV estimates themselves, and is a nice way to visualize this relationship,
+and also assess functional form, whether the instrument seems to be doing the right
+thing, and how noisy/stable the relationship is. We are fine with seeing some
+"clouds" of points in this plot (such as in the lower left corner), but we would
+not like to see a clear U-shape or something similar, since that would seem to be
+against the intuition that we're estimating a supply curve (unless we have a very good
+explanation or intuition for why this should be so in the particular market we're
+studying).
+
+It should be noted that these plots do not tell us anything about exogeneity or
+the exclusion restriction in themselves, though, coupled with other things we know,
+either on the specific market or from theory we think applies here, we could
+potentially detect worrisome features pointing to a violation of the main
+assumptions of the IV estimator. Otherwise, the plots should be viewed as a
+practical, graphical device for assessing functional form and how well the IV
+works (note again that this is condtional on the main assumptions - exogeneity
+and exclusion - actually holding for the instrument). 
+
+##### (b)
+
+We begin by residualizing the variables with respect to hour, month, year and hydrores:
+
+```{r}
+
+nortemp_res <- residuals(lm(nortemp ~ hour + month + year + hydrores,
+                            data=elmarket)) + mean(elmarket$nortemp,na.rm=TRUE)
+
+price_res <- residuals(lm(price ~ hour + month + year + hydrores,
+                            data=elmarket)) + mean(elmarket$price,na.rm=TRUE)
+
+
+volume_res <- residuals(lm(volume ~ hour + month + year + hydrores,
+                            data=elmarket)) + mean(elmarket$volume,na.rm=TRUE)
+
+```
+Here it is important to note that there are 312 missing values in hydrores:
+
+```{r}
+sum(is.na(elmarket$hydrores))
+```
+Because we are residualizing with respect to hydrores this means that we will have missing values in the residualized variables in the rows where hydrores is missing. We handle this by subsetting the dataset to only include rows where hydrores is not missing. 
+
+```{r}
+elmarket_subs <- elmarket %>% 
+    filter(!is.na(hydrores))
+```
+
+We can now include the residualized variables in the subset data.
+
+```{r}
+elmarket_subs <- cbind(elmarket_subs,nortemp_res,price_res,volume_res)
+```
+
+We also need to note that the range of the residualized temperature is much smaller:
+
+```{r}
+range(nortemp_res)
+```
+
+We now make the plots:
+
+```{r}
+elmarket_subs %>% 
+    select(nortemp_res,price_res,volume_res) %>% 
+    mutate(volume_res=volume_res) %>% 
+    rename("Residualized Price"=price_res,"Residualized Volume"=volume_res) %>% 
+    gather(key="Variable",value="Value",-nortemp_res) %>% 
+ggplot(aes(x=nortemp_res,y=Value,color=Variable)) +
+        stat_summary_bin(fun.y="mean",binwidth=1,geom="point") +
+    scale_color_brewer(palette = "Set1") +
+    labs(x="Residualized Temperature")
+```
+
+
+
+```{r}
+ggplot(data=elmarket_subs,aes(x=nortemp_res,y=volume_res)) +
+    stat_summary_bin(fun.y=function(y) length(y),binwidth=1,geom="col") +
+    labs(x="Residualized Temperature",y="Observations")
+```
+
+
+
+```{r}
+elmarket_subs %>% 
+    mutate(tempbin=cut_width(nortemp_res,width=1,boundary=-6)) %>% 
+    group_by(tempbin) %>% 
+    summarize(meanvolume=mean(volume_res),
+              meanprice=mean(price_res)) %>% 
+    ggplot(aes(x=meanvolume,y=meanprice)) +
+    geom_point() +
+    labs(x="Residualized Volume",y="Residualized Price")
+```
+
+We see that there is no longer a "flattening out" at the
+end of either prices or volumes towards higher temperatures (which is due to
+controlling for hour of the day). The relationships are quite linear
+for most of the schedule, though for temperatures below zero degrees, prices
+seem to be increasing with higher temperature. Inspecting the bars showing the
+number of observations within each bin tells us that we have few observations here,
+and that these estimates should be treated as more uncertain (in the statistical
+sense). Still, it could be an indication that there are some important factors
+we are not picking up. Since this pattern wasn't apparent before we residualized,
+in practice we would have done a few more plots to see which control is responsible
+for generating this (mostly it comes from controlling for month, which could tell
+us that we're missing some important control in the supply relation, maybe relating
+to precipitation or inflow into the reservoirs (as opposed to the stocks we observe)).
+
+The scatter of average volume against prices might seem a bit better than before,
+but the main improvement is that we believe that some of the controls were necessary
+for taking care of some worries with the exogeneity of the instrument (e.g., the
+correlation between hour of the day and temperature). Even though the pattern in
+this plot might seem to suggest some deviation from linearity, it doesn't give us
+a lot of hope that we'll be able to rule out linearity compared to some other,
+more flexible functional form (this would have to come from some well-founded
+belief we have about this market, if we were to go for something else).
+
+##### (c)
+
+We make the plots in a similar way. 
+
+
+```{r,warning=FALSE}
+elmarket %>% 
+    select(hydrores,price,volume) %>% 
+    rename("Price"=price,"Volume"=volume) %>% 
+    mutate(Volume=Volume) %>% 
+    gather(key="Variable",value="Value",-hydrores) %>% 
+ggplot(aes(x=hydrores,y=Value,color=Variable)) +
+        stat_summary_bin(fun.y="mean",bins=13,geom="point") +
+    scale_color_brewer(palette = "Set1") +
+    labs(x="Hydro Reservoir")
+```
+
+
+
+```{r,warning=FALSE}
+ggplot(data=elmarket,aes(x=hydrores,y=volume)) +
+    stat_summary_bin(fun.y=function(y) length(y),bins=13,geom="col") +
+    labs(x="Hydro Reservoir",y="Observations")
+```
+
+
+```{r}
+elmarket %>% 
+    mutate(hydrobin=cut_number(hydrores,13)) %>% 
+    group_by(hydrobin) %>% 
+    summarize(meanvolume=mean(volume),
+              meanprice=mean(price)) %>% 
+    ggplot(aes(x=meanvolume,y=meanprice)) +
+    geom_point() +
+    labs(x="Volume",y="Price")
+```
+
+The plots of the averages within bins of hydro reservoir amounts without any controls
+do not look nearly as good as the ones using temperature. The relationship
+between volume and reservoirs and price and reservoirs do not display a clear
+direction, and the VIV-plot do not seem to show any clear direction between
+volume and price when averaged within bins of reservoir stocks.
+
+From the aggregate plots of hydro reservoirs - thinking about what they tell
+us and how they relate to the problem of the producers in this market - it is not
+necessarily surprising that we at least need to control for seasonality in the
+hydro stocks to have a hope of getting anywhere in this market.
+
+##### (d)
+
+We residualize the variables with respect to hour, month, year, nortemp and swetemp.
+
+```{r}
+
+hydrores_res <- residuals(lm(hydrores ~ hour + month + year + nortemp + swetemp,
+                            data=elmarket)) + mean(elmarket$nortemp,na.rm=TRUE)
+
+price_res <- residuals(lm(price ~ hour + month + year + nortemp + swetemp,
+                            data=elmarket)) + mean(elmarket$price,na.rm=TRUE)
+
+
+volume_res <- residuals(lm(volume ~ hour + month + year + nortemp + swetemp,
+                            data=elmarket)) + mean(elmarket$volume,na.rm=TRUE)
+
+```
+
+As before we add the residualized variables to the subset of the dataset where hydrores is non-missing.
+
+```{r}
+elmarket_subs <- cbind(elmarket[!is.na(elmarket$hydrores),],
+                       hydrores_res,
+                       price_res=price_res[!is.na(elmarket$hydrores)],
+                       volume_res=volume_res[!is.na(elmarket$hydrores)])
+```
+
+Now we can calculate the values and make the plots.
+
+```{r}
+bindata <- elmarket_subs %>% 
+    mutate(hydrobin=cut_number(hydrores_res,13,labels=FALSE)) %>% 
+    group_by(hydrobin) %>% 
+    summarize(meanprice=mean(price_res),
+              meanvolume=mean(volume_res),
+              hydrores=mean(hydrores_res),
+              observations=n())
+```
+
+
+```{r}
+elmarket_subs %>% 
+    select(hydrores_res,price_res,volume_res) %>% 
+    mutate(volume_res=volume_res) %>% 
+    rename("Residualized Price"=price_res,"Residualized Volume"=volume_res) %>% 
+    gather(key="Variable",value="Value",-hydrores_res) %>% 
+ggplot(aes(x=hydrores_res,y=Value,color=Variable)) +
+        stat_summary_bin(fun.y="mean",bins=13,geom="point") +
+    scale_color_brewer(palette = "Set1") +
+    labs(x="Residualized Hydro Reservoir")
+```
+
+
+```{r}
+ggplot(data=elmarket_subs,aes(x=hydrores_res,y=volume_res)) +
+    stat_summary_bin(fun.y=function(y) length(y),bins=13,geom="col") +
+    labs(x="Residualized Hydro Reservoir",y="Observations")
+```
+
+
+```{r}
+elmarket_subs %>% 
+    mutate(hydrobin=cut_number(hydrores_res,13)) %>% 
+    group_by(hydrobin) %>% 
+    summarize(meanvolume=mean(volume_res),
+              meanprice=mean(price_res)) %>% 
+    ggplot(aes(x=meanvolume,y=meanprice)) +
+    geom_point() +
+    labs(x="Residualized Volume",y="Residualized Price")
+```
+
+From the bar graph of number of observations in each bin, we see that the
+number of observations in the bins is quite uneven. This isn't necessarily a problem, though
+it tells us something about what variation in hydro reservoir capacity is likely
+to drive our results, when we control for the factors included here.
+
+The graph of bin-average volume and price over the bins shows by and large that
+volume tends to increase and price tends to decrease when there is more water
+in the reservoirs (after residualizing). Still, the pattern isn't as stable as
+for temperature, which could be a sign that the relationship is "noisy" (in a
+statistical sense), that there are omitted variables responsible for generating
+non-linearities, or that the relationship actually features non-linearities.
+
+Based on these plots alone, it's not possible to decide which of the potential
+explanations actually generates this pattern. However, we do know that hydro
+reservoir is measured on the weekly level, such that we don't have more than 
+the number of weeks with non-missing hydro reservoir observations in effective
+variation (207 weeks). Compared to the amount of variation we get in temperature,
+with hourly readings, it should be expected that we cannot easily assess
+deviations from, e.g., a hypothesized linear relationship (low statistical power).
+Also note that the connecting lines in this plot draws our attention a lot to
+the movement between each point, which might make us underestimate the general
+slope as we move along the points. 
+
+Looking at the scatter of price and volume within bins against each other, we
+see that the major feature seems to be a downwarding sloping relationship, as
+we would expect from a demand schedule. (Note that all of the plots here will be sensitive to our binning strategy, at
+least to some extent, for instance to how many bins we create and the range of
+values in each bin)
+
+#### 12. Extra:
+
+##### (a)
+An approximate answer to this can be found by inspecting the VIV-plots of volume
+against price for both temperature and hydro reserves. This basically shows us
+the effective range in which our instruments "move" the variables of interest.
+
+This means that for temperature, we can think of the effective in-sample variation
+in price being in the range between 20 and 40 EUR/MWh, and 33 to 45 MWh for volume.
+For hydro reserves, the values seems to largely fall in the range 25 to 32 EUR/MWh
+for price, and 39 to 41 MWh for volume.
+
+Saying anything specific about supply (for the variation induced by temperature)
+or demand (for the variation induced by hydro reserves) outside of this range
+will have to be considered as extrapolation based on the functional form, and
+should be considered even more uncertain than our in-sample values. When doing
+forecasting, the formulas for errors (for instance for generating confidence
+intervals on the forecast) will to some extent increase as we get further away
+from the central values in the sample, though this will still only account for
+sampling variation uncertainty around the specified functional form, and not any
+uncertainty that arises due to us not actually being able to inspect whether the
+functional relationship actually continues outside of the effective variation we
+have in the sample (where the functional relationship is linear in our regressions
+above).
+
+Note: The values for effective variation we get from the VIV-plots is bascially
+the thing we want (net of some truncation of values due to discretization/"binning")
+- the value of price and volume after removing the effect of our control variables
+(residualization/partialling out). This means that there is a larger range of
+prices and volumes where we are not yet into the land of extrapolation, as long
+as values outside of the range can be attributed to our control variables (i.e.,
+we are within the range once we partial out the control variables).
+
+Note 2: How certain we should feel about our estimates of the curves on any
+point along it should also be considered in light of the amount of observations
+we have in the area around that point. If you look at the bar graphs for number of
+observations in the temperature bins (after residualizing), we shouldn't feel as
+confident about the supply curve for the values induced by temperatures under 0
+degrees and above 15 degrees, as we should for values betwen 5 and 10 degrees.
+
+##### (b)
+Since neither the supply curve nor the demand curve is uniquely defined here
+(varies by hour, month, year and temperature), we need to do some choices.
+I will use the demand and supply curves at 16h (4pm) in February 2014,
+at the average temperatures for this month. One could also calculate several
+and average, or simulate (bootstrap) over the curves to get at the uncertainty 
+in the estimates of the changes in volumes, prices and surplus (this would be
+the "right" thing to do if we were giving input to public policy, for instance).
+This isn't necessarily hard to do, but is outside the scope of this course
+(though you might feasibly explore such options for your term paper).
+
+Technical comment:
+Note that if we consider the slope parameters as fixed (not accounting for the
+statistical uncertainty in these), then the only uncertainty will be in the
+changes in surplus, since the change in price, volume and deadweight loss is
+only a function of the slope parameters and the size of the tax (in the linear
+case we have here).
+
+Since they are linear curves, all we need is an intercept and the slope of each.
+Demand:
+
+```{r}
+demand_iv <- ivreg(volume ~ price + nortemp + swetemp + hour + month + year | 
+                       hydrores + nortemp + swetemp + hour + month + year,
+                   data=elmarket)
+```
+
+Effective demand intercept at average temperatures 16h, February 2014:
+
+```{r}
+elmarket %>% 
+    filter(hour==16, month==2 & year ==2014) %>% 
+    summarize(nortemp=mean(nortemp),
+              swetemp=mean(swetemp))
+```
+
+```{r}
+constD <- demand_iv$coefficients[["(Intercept)"]] + 
+    demand_iv$coefficients[["nortemp"]] * 3.51 +
+    demand_iv$coefficients[["swetemp"]] * 3.26 +
+    demand_iv$coefficients[["hour16"]] +
+    demand_iv$coefficients[["month2"]] +
+    demand_iv$coefficients[["year2014"]]
+```
+Store slope parameter
+
+```{r}
+alphaD = demand_iv$coefficients[["price"]]
+```
+
+
+Supply
+```{r}
+supply_iv <- ivreg(volume ~ price + hydrores + month + year | 
+                                    nortemp + swetemp + hydrores + hour + month + year,
+                                data=elmarket)
+```
+
+Effective supply intercept at average hydro reserves February 2014:
+
+```{r}
+elmarket %>% 
+    filter(year==2014 & month==2) %>% 
+    summarize(hydrores=mean(hydrores,na.rm=TRUE))
+```
+```{r}
+constS <- supply_iv$coefficients[["(Intercept)"]] + 
+    supply_iv$coefficients[["hydrores"]] * 63 +
+    supply_iv$coefficients[["month2"]] +
+    supply_iv$coefficients[["year2014"]]
+```
+Store slope parameter
+```{r}
+alphaS <- supply_iv$coefficients[["price"]]
+```
+
+Equilibrium price and volume implied by model as market currently looks like:
+(Solution to demand = supply <=> constD + alphaD * P = constS + alphaS * P)
+
+Equilibrium price before tax increase
+```{r}
+pretaxprice = (constD - constS) / (alphaS - alphaD)
+pretaxprice
+```
+
+Equilibrium volume before tax increase
+```{r}
+pretaxvol = constD + alphaD * pretaxprice
+pretaxvol
+```
+
+Calculate post-tax price and volume (deduct two from price per unit in supply, such that the price we calculate has the interpretation of price to consumers. (Solution to demand = supply <=> constD + alphaD * P = constS + alphaS * (P - 2))
+
+Equilibrium price after tax increase
+```{r}
+posttaxprice = (constD - constS + alphaS * 2) / (alphaS - alphaD)
+posttaxvol = constD + alphaD * posttaxprice
+```
+
+Equilibrium volume after tax increase
+```{r}
+posttaxprice
+```
+Post Tax Volume
+```{r}
+posttaxvol
+```
+
+Change in price from tax increase 
+```{r}
+posttaxprice - pretaxprice
+```
+
+Change in volume from tax increase
+
+```{r}
+posttaxvol - pretaxvol
+```
+
+See that price to consumers increase by 1.8 EUR/MWh, while volume transacted in the market decreases by 309 MWh (per hour)
+
+
+Calculate change in consumer surplus - Additional payment on units still bought, plus willingness to pay for units no longer bought (can use triangle formula with linear demand)
+```{r}
+(posttaxprice - pretaxprice) * posttaxvol + (posttaxprice - pretaxprice) * (pretaxvol - posttaxvol) / 2
+```
+To put things in perspective, remember that this is a measure for an hour - in practice, we would probably translate it to a yearly measure, and show it as a percentage of pre-tax consumer surplus (we can do this for this hour, and show that it is roughly 1.3% of consumer surplus pre-tax - left as an exercise)
+
+Calculate change in producer surplus (Note that price received by the producers are two EUR less per unit than the price received by consumers due to tax wedge)
+```{r}
+	(pretaxprice - (posttaxprice - 2)) * posttaxvol + 
+    (pretaxprice - (posttaxprice - 2)) * (pretaxvol - posttaxvol) / 2
+```
+ 
+The deadweight loss is equal to the consumer and producer surplus for the units no longer sold, which can be simplified in the following way (with linear demand and supply):
+```{r}
+	2 * (pretaxvol - posttaxvol) / 2
+```
+
+where the difference between DWL and total change in CS and PS is made up by
+the tax revenues on units still transacted:
+```{r}
+    2 * posttaxvol
+```
+One can note that the deadweight loss is quite small here, amounting to about
+0.3% of tax revenues. We also see that consumers carry most of the tax,
+taking about 90% of the increase (1.8 EUR). Looking at the demand and supply in
+this market, we see that demand responds much less to prices than supply, and
+also has a very low elasticity in an absolute sense.
+
+A classical result in the study of taxation shows that the incidence (who
+effectively pays the tax) will depend on the relative size of elasticity,
+where the least elastic part of the market will carry most of the tax increase,
+in proportion to the "share" of elasticity for the other part. What we see here
+basically follows from this.
+
+The size of the deadweight loss depends on the absolute size of elasticities.
+If one of the sides of the market is very inelastic, this side will carry most
+of the tax increase, without changing quantity by much. This is exactly what is
+happening here. When the change in quantity is very low, the deadweight loss
+will also tend to be very low (at least compared to surplus generated in the
+market). A basic result in public finance/optimal taxation is that taxation of
+objects for which demand or supply is very inelastic will generate the least
+distortions in terms of welfare. (This of course ignores the feelings many
+people have towards being taxed on behavior they cannot/don't want to change.)
+
+##### (c)
+This is largely analogous to the case above, only with a quantity intervention, rather than a price intervention. We can still use the pre-tax variables above (assuming that the tax is not relevant for this task), and keeping in mind that the parameters of demand and supply is based on the example of a specific time in the data.
+
+
+Post cable price
+```{r}
+postcableprice <- (constD + 1400 - constS) / (alphaS - alphaD)
+postcableprice
+```
+
+Post cable volume
+```{r}
+postcablevol <- constD + 1400 + alphaD * postcableprice
+postcablevol
+```
+
+Slightly different way of calculating the change (to make clear the parts of the model actually generating changes in these):
+
+Change in price from cable
+```{r}
+1400 / (alphaS - alphaD)
+```
+
+Change in volume from cable
+```{r}
+1400 + 1400 * alphaD / (alphaS - alphaD)
+```
+Deduct the 1400 from the last expression to get change for domestic consumers
+
+Change in surplus for domestic producers:
+```{r}
+(postcableprice - pretaxprice) * pretaxvol + (postcableprice - pretaxprice) * (postcablevol - pretaxvol) / 2
+```
+
+Change in surplus for domestic consumers:
+```{r}
+    (postcableprice - pretaxprice) * (postcablevol - 1400) + (postcableprice - pretaxprice) * (pretaxvol - (postcablevol - 1400)) / 2
+
+```
+	
+We see that domestic producers (producers in the nordic area) will gain
+substantially from the extra demand generated by the cable, while domestic
+consumers will lose almost equally substantially (mainly through the price
+effect), though the total change in domestic surplus is still substantial.
+This change will benefit domestic electricity producers by a lot, while harming
+domestic consumers (households and industry). The change satisfies the
+Kaldor-Hicks principle, that the intervention would be a Pareto improvement
+with a suitable arrangement of lump sum transfers (just another way of saying
+that total surplus is increased). Of course, these transfers would not be
+likely to materialize, and we see a basis of which interest groups will take
+what stance on the policy.
+Note: This is an example, and the cable is not expected to increase demand
+by nearly as much on net. Instead, it will be exporting when the relative
+prices are low in the Nordics, and importing when they are high, meaning
+that it will reduce price variability (but not necessarily by a lot).
+
+##### (d)
+At the webpages of Nordpool spot, you can download the market cross data by going
+to "Market data", "Data downloads", "System Price Curve Data" (You can filter by
+"Market Cross Points data report" to remove the graph downloads).
+
+I chose November 18th 2015 at 10h for the following numbers (an arbitrary day in
+our data set).
+
+DEMAND:
+
+At that day and hour, the equilibrium price was 25.58. By looking at the demand
+curve report, we see that if we decreased the price to 22.9, volume would be
+47 610.9 MWh, while if we increased price to 27.9, volume would be
+47 445 MWh. We can now calculate the arc elasticity of demand wrt price, using the
+midway formula for calculating percentage changes:
+(Note that these points were chosen somewhat arbitrarily, based on where the
+curve actually changes. In practice, we might have wanted to smooth the curves
+before doing this exercise, maybe also averaging over several hours or days,
+to get less sensitive and presumably noisy numbers from the "lumpy" bid curves)
+
+Percentage change in demand volume
+```{r}
+dvolpct = (47445 - 47610.9) / ( (47445 + 47610.9) / 2)
+dvolpct
+```
+
+Percentage change in price
+```{r}
+dpricepct = (27.9 - 22.9) / ( (27.9 + 22.9) / 2)
+dpricepct
+```
+
+(Arc) elasticity of demand 
+```{r}
+dvolpct / dpricepct
+```
+
+We could also inspect the linearized change over this interval:
+```{r}
+(47445 - 47610.9) / (27.9 - 22.9)
+```
+
+We see that this elasticity is much lower than what we estimated. This could of course be a random thing, due to the specific day, but if we were to inspect many days and hours, we would see that the elasticity and derivative
+of demand falls short of our estimate by quite a lot. This is likely tied to
+us picking up some unobserved factors affecting demand in a particular way, using
+hydrores as an instrument. The direction we get a bias suggests that hydrores
+(after partialing out our controls) is negatively correlated with demand (since
+the *negative* demand slope is *more* negative in our estimates than in reality).
+
+SUPPLY:
+
+At the same day and hour, looking at the supply
+curve report, we see that if we decreased the price to 24.6, volume would be
+45 297.9 MWh, while if we increased price to 26.6, volume would be
+49 489.7 MWh. We can now calculate the arc elasticity of supply wrt price, using the
+midway formula for calculating percentage changes:
+
+Percentage change in demand volume
+```{r}
+svolpct <-  (49489.7 - 45297.9) / ( (49489.7 + 45297.9) / 2)
+svolpct
+```
+Percentage change in price
+```{r}
+spricepct = (26.6 - 24.6) / ( (26.6 + 24.6) / 2)
+spricepct
+```
+
+
+(Arc) elasticity of supply
+```{r}
+svolpct / spricepct
+```
+
+
+We could also inspect the linearized change over this interval:
+```{r}
+(49489.7 - 45297.9) / (26.6 - 24.6)
+```
+
+The supply elasticity we get here is closer to the one we roughly
+calculated with our supply estimates. This is somewhat lucky, of course, but
+if you were to look at the elasticity of supply around the equilibrium point
+over time, not just for one hour in one day, you would find that the elasticity
+is on average is actually somewhat close to what we estimated.
