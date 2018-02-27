@@ -1,0 +1,419 @@
+---
+title: "Lab 4"
+date: "March 2, 2018"
+output: 
+  html_notebook:
+    highlight: tango
+    theme: flatly
+    toc: yes
+    toc_float: yes    
+---
+
+RStudio keeps track of the code chunks in the document (see the menu near the bottom left of the code window, to the right of the "line number:column number" counter). Optionally, you can give any chunk a name, for instance "Setup" below. This can make it easier to navigate the code chunks afterwards.
+
+```{r Setup, include = FALSE}
+
+install.packages("statar", dependencies = TRUE)
+
+library(tidyverse)
+library(stargazer)
+library(knitr)
+library(lubridate)
+library(plm)
+library(dplyr)
+library(statar)
+
+stores <- read.csv('stores.csv')
+markets <- read.csv('markets.csv')
+  
+```
+
+
+# Data wrangling
+
+## 1 
+Let us first inspect the two data sets
+```{r Inspect data sets}
+stores
+markets
+```
+We want to combine the information in the two data sets. More specifically, we want to add information about the market to each row in the stores data frame. This is achieved by an left join. In order to perform the join we need to extract the year rom the stores data, since we will join using the combination of market and year as key.
+
+```{r Generate year variable}
+stores <- mutate(stores, year = year(date))
+```
+
+
+```{r Perform left join}
+stores <- left_join(stores, markets, by = c("market", "year"))
+stores
+```
+
+A `left_join(x,y, by = key)` keeps all observations in "X". A right join would keep all observations in "y", while a full join would keep all observations in "x" and "y". For more information, see chapter 13 in R for Data Science.
+
+## 2 
+
+We want to create a variable with the number of pharmacies in a given market in a given month. First, let us confirm that our data sets contain at most one observation per pharmacy per month
+
+```{r Confirm that there is at most one observation per pharmacy per market}
+count(stores, date, phid) %>% summarise(max(n)) 
+#Alternatively, we could do 
+group_by(stores, date, phid) %>% summarise(n = n())
+
+```
+
+Now, let us count the number of pharmacies per market (in a given month)
+
+```{r Count the numer of pharmacies per market}
+stores <- group_by(stores, date, market) %>% mutate(ncomp = n()) %>% ungroup()
+stores
+```
+
+```{r}
+summarise(stores, mean = mean(ncomp), min = min(ncomp), max = max(ncomp))
+```
+
+## 3
+
+```{r}
+stores <- mutate(stores,totpop = f0_19 + f20_66 + f67 +m0_19 + m20_66 + m67) %>%  mutate(popdens = totpop / area)
+```
+
+
+# Present and understand your data
+
+## 4
+The "sale" variable is in NOK. More convenient to have it in million NOK
+
+```{r Sale in million NOK}
+stores <- mutate(stores, sale = sale / 100000)
+```
+
+
+```{r Summary statistics}
+numvars <- select(stores, storesize, sale, nobs, packages, year, ncomp, totpop, popdens)
+stargazer(as.data.frame(numvars), type = 'text')
+```
+
+For categorical variables with few values, tabulation is more useful
+
+```{r Tabulate}
+count(stores, chain)
+```
+
+For categorical variables with many values, such as "phid" tabulation is more difficult. At least it is good to know the number of distinct observations
+
+```{r }
+summarise(stores, min_phid = min(phid), max_phid = max(phid), distinct_phid = n_distinct(phid))
+```
+
+## 5
+
+When we have many observations, a plain-vanilla scatter is not that informative:
+
+```{r}
+ggplot(data = stores) +
+  geom_point(mapping = aes(x = nobs, y = sale))
+```
+
+Making the points partially transparent helps a bit (but not that much):
+
+```{r}
+ggplot(data = stores) +
+  geom_point(mapping = aes(x = nobs, y = sale), alpha = .05)
+```
+A useful variant of a scatter plot is a binscatter (available through the `statar` package). A binscatter plots average values of the y-variable for within bins of the x-variable:
+
+```{r}
+ggplot(data = stores, mapping = aes(x = nobs, y = sale)) +
+  stat_binmean(n = 200, alpha = 0.5)
+```
+Turning now to number of pharmacies in the market:
+
+```{r}
+ggplot(data = stores ) +
+  geom_point(mapping = aes(x = ncomp, y = sale), alpha = 0.1)
+```
+
+
+```{r}
+ggplot(data = stores, mapping = aes(x = ncomp, y = sale), ) +
+  stat_binmean(n = 200, alpha = 0.5)
+```
+
+
+## 6
+
+```{r}
+ggplot(data = stores) + 
+  geom_point(mapping = aes(x = packages, y = sale ), alpha = 0.05) + 
+  facet_wrap(~ chain)
+```
+# Estimation
+
+## 7
+
+As usual we run OLS regressions with the command `lm`:
+
+
+```{r}
+salereg_ncomp <- lm(sale ~ ncomp, data = stores)
+stargazer(salereg_ncomp, type = 'text',
+          dep.var.labels = "Sales in million NOK",
+          covariate.labels = "Number of pharmacies in market")
+```
+## 8
+
+```{r}
+stores <- group_by(stores, phid) %>% 
+  mutate(demeaned_sale = sale - mean(sale), demeaned_ncomp = ncomp - mean(ncomp)) %>%  
+  ungroup()
+```
+
+## 9
+
+As before, an ordinary scatter is difficult to read
+
+```{r}
+ggplot(data = stores ) +
+  geom_point(mapping = aes(x = demeaned_ncomp, y = demeaned_sale), alpha = 0.1)
+```
+
+A binscatter:
+
+```{r}
+ggplot(data = stores, mapping = aes(x = demeaned_ncomp, y = demeaned_sale), ) +
+  stat_binmean(n = 200, alpha = 0.5)
+```
+## 10
+```{r}
+salereg_ncomp <- lm(demeaned_sale ~ demeaned_ncomp, data = stores)
+stargazer(salereg_ncomp, type = 'text',
+          dep.var.labels = "Sales in million NOK (demeaned)",
+          covariate.labels = "Number of pharmacies in market (demeaned)",
+          notes = c("Variables are demeaned with respect to pharmacy-level means"))
+```
+
+
+
+
+## 1.
+To identify the ATC's that get generic entry with an indicator, you can either just take the maximum of the generic indicator within ATC (first line below), or compare the "atc" variable with a vector of the names/ATC's (in text strings) that are reported to experience generic entry (third and fourth line below).
+```{r Find ATCs with entry}
+pharma <- pharma %>% group_by(atc) %>% mutate(entryatc = max(generic)) %>% ungroup()
+
+entryatcs <- c("M05BA04", "N02CC01", "A10BB12", "G03HB01", "G04CA02")
+pharma$entryatc <- pharma$atc %in% entryatcs
+```
+
+Try to understand the following code by looking up the documentation for each function (use `F1` in RStudio).
+```{r Average by group}
+pharma %>% 
+  select(entryatc, price, maxprice, ddd, inprice, generic, dddperpack) %>% 
+  group_by(entryatc) %>% 
+  mutate(ddd = ddd / 1000) %>% 
+  summarize_all(mean) %>% 
+  gather(key = variable, value = value, -entryatc) %>% 
+  spread(entryatc, value=value) %>% 
+  mutate_if(is.numeric, funs(round(.,1)))
+```
+
+
+## 2.
+One way to create a date variable from the year and month variables, is to generate a number of the format *YYYYMMDD* and pass it to the `ymd` function from lubridate.
+```{r Create date}
+pharma <- pharma %>% mutate(date = ymd(year * 10000 + month * 100 + 1))
+```
+
+```{r Find dates with generic competition within ATC}
+pharma <- pharma %>% group_by(atc, date) %>% mutate(gencomp = max(generic))
+```
+
+
+To normalize prices, we express them in NOK per DDD. To acheive this, we can divide by DDD per package (since the price is given in NOK per package). `facet_grid` allows us to make separate plots by splitting on (discrete) variables. Read the documentation for facet_grid to understand how we can get separate plots along columns or rows. Since the number of observations are very different between the groups, and we use a histogram, we let the scale of the y-axis to be different between the plots with the option `scales = 'free_y'`. The variable entryatc takes the values `TRUE` and `FALSE` which is not too informative as panel labels. We therefore set a custom label using the `labeller` option, where the function `as_labeller` can take a named vector as argument, translating between `TRUE` and `FALSE` and more informative names.
+```{r Price histograms without generic competition}
+pharma %>% filter(gencomp == 0) %>% ggplot(mapping = aes(price / dddperpack)) +
+  geom_histogram(bins = 50, alpha=0.5) +
+  facet_grid(entryatc ~ ., scales = 'free_y', labeller = as_labeller(c(`FALSE`="No entry", `TRUE`="Entry"))) +
+  labs(x="Price NOK/DDD")
+```
+
+
+## 3.
+```{r}
+pharma %>% group_by(entryatc, atc, date) %>% 
+  summarize(norg = sum(generic == 0)) %>% 
+  group_by(date, entryatc) %>% 
+  summarize(norg = mean(norg)) %>% 
+  ggplot(aes(date, norg, linetype=entryatc)) + geom_line() +
+  labs(x="Date", y="Originator products")
+```
+
+
+## 4.
+To highlight the period of entry, we can add vertical lines at the first and last date of entry by using `geom_vline`. We can define a vector with these dates:
+```{r}
+entrydates = as.Date(c("2005-12-01", "2006-02-01"))
+```
+
+However, it is not completely as straightforward to make dates work with `geom_vline` as with a numeric scale. However, it turns out that the simple solution is to coerce the vector of dates to numeric using `as.numeric`. Note that we only define the horizontal axis with `aes` in the call to `ggplot` below, while we specify aesthetics with different y-variables (price and maxprice) in separate calls to `geom_line` to plot both variables. Also note that I specify `linetype` in the `aes` for each call to `geom_line` below. This is to achieve two things: 1) That the lines are drawn differently (could be done easier), and 2) that we we automatically get a legend in the plot specifying which line is which. The command `scale_linetype_manual` allows us to specify how the lines should look (giving a named vector to the option `values`), as well as potentially other options for how the legend should look (the first, empty string is the title of the legend).
+```{r}
+pharma %>% filter(generic == 0) %>% group_by(entryatc, date) %>% 
+  summarize(price = mean(price / dddperpack),
+            maxprice = mean(maxprice / dddperpack)) %>% 
+  ggplot(aes(x=date)) +
+  geom_line(aes(y=price, linetype = "Price")) + geom_line(aes(y=maxprice, linetype = "Price ceiling")) +
+  geom_vline(xintercept = as.numeric(entrydates), linetype = 'dotted') +
+  facet_grid(entryatc ~ ., scales = "free_y", labeller = as_labeller(c(`FALSE`="No entry", `TRUE`="Entry"))) +
+  scale_linetype_manual("", values = c("Price"="solid", "Price ceiling"="dashed")) +
+  labs(x='Date', y='Price (NOK/DDD)')
+```
+
+
+## 5.
+Specify the entryatc variable as a factor with lables to facilitate labels in plots.
+```{r}
+atcpharma <- pharma %>% group_by(atc, generic, date) %>% 
+  summarize(
+    price = weighted.mean(price / dddperpack, ddd),
+    maxprice = weighted.mean(maxprice / dddperpack, ddd),
+    ddd = sum(ddd),
+    entryatc = factor(mean(entryatc), levels=c(0, 1), labels=c("No entry", "Entry")),
+    gencomp = factor(mean(gencomp), levels=c(0, 1), labels=c("No competition", "Competition"))
+    )
+```
+
+Note that giving a factor variable to the options `shape` and `color` will make ggplot draw lines and markers of different colors and shapes for each group in the factor variable. Below, `shape` only matters for `geom_point`, while `color` matters for both `geom_line` and `geom_point`. 
+```{r DiD plot DDD}
+atcpharma %>% filter(generic == 0) %>% group_by(entryatc, date) %>% 
+  summarize(ddd = mean(ddd)) %>% 
+  ggplot(aes(date, ddd, shape=entryatc, color=entryatc)) + 
+  geom_line() + geom_point() + 
+  geom_vline(xintercept = as.numeric(entrydates), linetype = 'dotted') +
+  theme(legend.title = element_blank()) +
+  labs(x="Date", y="DDD")
+```
+
+In many cases, it can be desirable and look more professional to not use colors to separate information in plots. Instead, one could for instance use different linestyles in addition to different markers:
+```{r DiD plot DDD nocolor}
+atcpharma %>% filter(generic == 0) %>% group_by(entryatc, date) %>% 
+  summarize(ddd = mean(ddd)) %>% 
+  ggplot(aes(date, ddd, shape=entryatc, linetype=entryatc)) + 
+  geom_line() + geom_point() + 
+  geom_vline(xintercept = as.numeric(entrydates), linetype = 'dotted') +
+  theme(legend.title = element_blank()) +
+  labs(x="Date", y="DDD")
+```
+
+Also do the plots for average of log DDD. Note that we can also manually control the style of the lines using `scale_linetype_manual`, for instance if we think that the control group should have a dashed line, while the treated group should have a solid one (or something else entirely).
+```{r DiD plot log DDD}
+atcpharma %>% filter(generic == 0) %>% group_by(entryatc, date) %>% 
+  summarize(lddd = mean(log(ddd))) %>% 
+  ggplot(aes(date, lddd, shape=entryatc, linetype=entryatc, group=entryatc)) + 
+  geom_line() + geom_point() + 
+  geom_vline(xintercept = as.numeric(entrydates), linetype = 'dotted') +
+  theme(legend.title = element_blank()) +
+  scale_linetype_manual(values=c("dashed", "solid")) +
+  labs(x="Date", y="ln DDD")
+```
+
+
+# Estimating diff-in-diff
+
+## 6.
+```{r define periods}
+atcpharma <- atcpharma %>% 
+  mutate(
+    postentry = date >= "2005-12-01",
+    interrim = date >= "2005-12-01" & date < "2006-02-01"
+    )
+```
+
+Remember that `filter` selects rows from data according to some criterion. In expressions involving logical variables, `!` is negation, i.e., "not". Here, `!interrim` means that `filter` will select all rows except the ones corresponding to the two first months where entry happens.
+```{r DiD estimates DDD}
+did.base <- lm(log(ddd) ~ entryatc * postentry, data = filter(atcpharma, !interrim))
+```
+
+
+## 7.
+Hint: you can use `factor(date)` to include dummies for each monthly date in the regression.
+```{r DiD estimates DDD time FE}
+
+```
+
+
+## 8.
+
+
+## 9.
+```{r Aggregate by ATC and date}
+totalddd <- atcpharma %>% group_by(atc, date) %>% 
+  summarize(
+    ddd = sum(ddd),
+    entryatc = first(entryatc),
+    gencomp = first(gencomp)
+  )
+```
+
+```{r DiD plot total DDD}
+totalddd %>% group_by(entryatc, date) %>% 
+  summarize(lddd = mean(log(ddd))) %>% 
+  ggplot(aes(date, lddd, shape=entryatc, linetype=entryatc)) +
+  geom_line() + geom_point() +
+  geom_vline(xintercept = as.numeric(entrydates), linetype = 'dotted') +
+  theme(legend.title = element_blank()) +
+  labs(x="Date", y="ln DDD")
+```
+
+The seasonality in the plot above makes it hard to tell whether anything really happens. We can partial out the average monthly pattern, which is a strong, recurring relationship here: Take the residuals after a regression on indicators for month (optionally adding back the average value, to make the level comparable).
+```{r DiD plot total DDD residualized}
+totalddd %>% group_by(entryatc, date) %>% 
+  summarize(lddd = mean(log(ddd))) %>% 
+  ggplot(
+    aes(date, residuals(lm(lddd ~ factor(date))) + mean(lddd), shape=entryatc, linetype=entryatc)
+    ) +
+  geom_line() + geom_point() +
+  geom_vline(xintercept = as.numeric(entrydates), linetype = 'dotted') +
+  theme(legend.title = element_blank()) +
+  labs(x="Date", y="ln DDD (residualized)")
+```
+
+
+
+Make a factor variable called "Type" from the generic indicator, to facilitate better labels in plots.
+```{r}
+atcpharma <- atcpharma %>%
+  mutate(
+    Type = factor(generic, levels=c(0, 1), labels=c("Originator", "Generic"))
+    )
+```
+
+Make a separate data object for this aggregation, since we will be using it in several figures.
+```{r}
+genorg <- atcpharma %>% filter(entryatc == "Entry") %>% 
+  group_by(Type, date) %>% 
+  summarize(
+    lddd = mean(log(ddd)),
+    totddd = sum(ddd),
+    lprice = mean(log(price)),
+    lmaxprice = mean(log(maxprice))
+    ) 
+```
+
+
+
+```{r}
+ggplot(genorg, aes(date, lddd, linetype=Type, group=Type)) +
+  geom_line() + geom_point()
+```
+
+
+```{r}
+ggplot(genorg, aes(x=date)) +
+  geom_line(aes(y=lprice, linetype = "Price")) + geom_line(aes(y=lmaxprice, linetype = "Price ceiling")) +
+  geom_vline(xintercept = as.numeric(as.Date(c("2005-12-01", "2006-02-01"))), linetype = 'dotted') +
+  facet_grid(Type ~ .) + scale_linetype_manual("", values = c("Price"="solid", "Price ceiling"="dashed")) +
+  labs(x='Date', y='ln Price')
+```
+
+## 10.

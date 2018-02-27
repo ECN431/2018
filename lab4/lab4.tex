@@ -1,0 +1,108 @@
+\documentclass[12pt,a4paper]{article}
+
+
+\PassOptionsToPackage{hyphens}{url}\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{multirow}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage[top=1in, bottom=1in, left=1in, right=1in]{geometry}
+
+
+\title{ECN431\\Lab session 4\\Market structure and local competition}
+\date{Aud 12 \\ Friday, March 2\textsuperscript{th} 2017}
+\begin{document}
+\maketitle
+
+\section*{Before the Lab}
+\begin{itemize}
+\item Obtain the datasets and the example R notebook from the GitHub repository of the course
+\end{itemize}
+
+\section*{Purpose of this lab}
+Work with analysis of firm entry and retail outlet competition.
+
+\subsection*{Learning goals}
+\begin{itemize}
+\item	Improve the skill of presenting data for own and other's understanding
+\item	Understand the fundamental endogeneity problems in market structure analysis
+\item	Be able to use visual inspection together with regression to understand data and endogeneity
+\item	Know basic features of the Norwegian retail pharmacy market
+\item	Be able to estimate regressions informing us about market structure
+\item	Be able to explain, present and identify critical assumptions in your analysis
+\end{itemize}
+
+
+\subsection*{Practical information}
+The example R notebook (which you either pulled to your fork from the main repository or downloaded from GitHub) is opened in RStudio. This file contains several commands that you will need in order to answer the questions in these exercises, in addition to information on new commands. Remember: If/when you are uncertain about the purpose, functionality and extensions to/options for some of the commands, remember that you can get documentation for the command in RStudio by pressing F1. You should also try to google your particular problem.
+
+
+
+\subsection*{Market structure: Pharmacies in Norway}
+The turnover of medical drugs in Norway was 23.4 billion NOK (approx. 2.5 billion EUR) in 2015. The retailing side of the Norwegian pharmaceutical market largely consists of three private chains who are vertically integrated with wholesale operations, all owned by international corporations, in addition to hospital pharmacies (publicly owned) and a few independent pharmacies. The owner-side of the market is deregulated, in the sense that anybody can own or establish a pharmacy, as long as they comply with the regulation for pharmacy operations and sale of medical drugs.\footnote{This followed a deregulation in 2001.} Advertisement for prescription drugs to the general public is forbidden in Norway.\footnote{As in most other countries, with the US as a notable exception.}
+
+Prescription drugs are subject to price regulation, which means that pharmacies cannot raise prices above given price ceilings. The largest share of medical expenses is covered by the government (around 73\% of total drug expenditures in 2015), meaning that consumers do not necessarily face the full price due to insurance.\footnote{See lab 3 part 2 for more details on this.} Expenses for medical drugs are not a particularly large part of government expenditures, totalling 6.4\% of public health expenditures and 0.5\% of GDP in 2015. This is due to a combination of large public expenditures, high GDP, relatively tight price regulation and other public policies.
+
+For the average pharmacy, almost 70\% of revenue is due to prescription drug, while less than 10\% is due to non-prescription drugs and more than 20\% is due to other goods (could be materials for medical treatment, products for hygiene and personal care, as well as some consumables).
+
+\pagebreak
+
+\subsubsection*{Data}
+You will work with two datasets for this exercise. The file \emph{stores.csv} contains monthly sales of prescription drugs and other information on pharmacies from March 2004 to December 2011, while the file \emph{markets.csv} contains yearly information on population within demographic groups and geographical size of designated markets in the same time period.\footnote{The data is stored in \emph{csv} format (\emph{comma-separated values}). This is a very usual storage format for data, which has the benefit that all statistical and spreadsheet software can read and write such files. From a do-file or the command line in Stata, you can use the command \texttt{insheet} to read such files.} The markets are defined based on driving distances in minutes.
+
+\vspace{10pt}
+Variable list for \emph{stores.csv}:
+\begin{itemize}
+ \item date -- monthly date in format \texttt{YMD}
+ \item phid -- pharmacy ID
+ \item chain -- chain affiliation ID
+ \item market -- geographic market ID
+ \item storesize -- physical size of the store in square meters
+ \item sale -- total revenue from prescription drugs in NOK
+ \item packages -- total number of packages sold
+ \item nobs -- number of customers
+\end{itemize}
+
+\vspace{10pt}
+Variable list for \emph{markets.csv}:
+\begin{itemize}
+ \item year -- year
+ \item market -- geographical market ID
+ \item area -- size of the market in square kilometers
+ \item f0\_19/m0\_19 -- females/males in market aged 0 to 20
+ \item f20\_66/m20\_66 -- females/males in market aged 20 to 67
+ \item f67/m67 -- females/males in market aged 67 and above
+\end{itemize}
+
+\pagebreak
+
+\subsubsection*{Tasks}
+\begin{enumerate}
+ \item[] \emph{Data wrangling}
+ \item Merge market population information with the pharmacy store data. You will need to generate a date variable, extract year, and, for instance, merge the store data many-to-one with the population data, using year and market ID as keys.
+ \item Generate a variable showing the number of pharmacies within each market (for each pharmacy).
+ \item Generate total population and population density for each market.
+ \item[] \emph{Present and understand your data}
+ \item Generate appropriate tables of summary statistics.
+ \item Make a graph showing the relationship between sales (in monetary terms), number of customers buying from the pharmacy and the number of pharmacies in the market.\footnote{Note that it might be appropriate to scale the measure of sales to make graphs and regression output easier to read.}
+ \item Make a plot showing the relationship between sales (in monetary terms) and the number of packages sold separately for each pharmacy chain. We can reveal that one of the chain ID's specifies hospital pharmacies.
+ \item[] \emph{Estimation}
+ \item Regress sale on the number of pharmacies in the market (i.e., the variable you generated in 2.) How do you interpret 
+ the result?
+ \item Generate a demeaned sales variable, that is, a variable showing the difference between sales and the mean sales (for the pharmacy). In addition, generate demeaned version of the variable showing number of pharmacies in the market.
+ \item Make a graph showing the relationship between the two variables you just created. Compare this graph to the corresponding graph from Task 4.
+ \item Regress demeaned sales on the demeaned number of pharmacies in the market.
+ \item Run a fixed-effects regression of sale on the number of pharmacies in the market.\footnote{First, use \texttt{xtset} to tell Stata that Pharmacy ID is the panel variable, and the date is the time variable. Then use \texttt{xtreg, fe}} for the regression. Compare the results with the regression in Task 9.
+ \item Run a regression of sale on the number of pharmacies in the market, but with market, rather than pharmacy fixed-effects. Compare the results.
+\item Extra: 
+\begin{enumerate}
+\item Collapse the data set to get one observation (row) for each market per year. Your collapsed data set should consist of one column with market ID, one with the number of pharmacies in the market in a given year and one with the total population in the market (for a later task, you can also include the population within demographic segments here as well).
+\item Make a plot showing the relationship between number of pharmacies and market size (measured by total population). Comment on the nature of the relationship -- is it convex or concave? Does an ordinary linear regression line capture the relationship well?
+\item Demean the number of pharmacies and market size within each market and plot the relationship. Compare with the results above and discuss.
+\item Explore whether the number of pharmacies in a market is sensitive to local demographics (compared to an overall increase in population).
+\item Explore whether growth in population or particular demographics predicts entry of pharmacies.
+\item Take a look at Figure 1.1.1 at the following link: \url{http://www.apotek.no/fakta-og-ressurser/statistikk-for-2016/1--apotek/1-1-apotek-i-norge}. In light of your findings so far, discuss the implications for the development of the structure in this sector over time with an ageing population.
+\end{enumerate}
+\end{enumerate}
+
+\end{document}
