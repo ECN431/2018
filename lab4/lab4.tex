@@ -79,24 +79,24 @@ Variable list for \emph{markets.csv}:
 \subsubsection*{Tasks}
 \begin{enumerate}
  \item[] \emph{Data wrangling}
- \item Merge market population information with the pharmacy store data. You will need to generate a date variable, extract year, and, for instance, merge the store data many-to-one with the population data, using year and market ID as keys.
+ \item Add market population information to the pharmacy store data. You will need to extract year from the date variable and join the data frames using year and market ID as keys.
  \item Generate a variable showing the number of pharmacies within each market (for each pharmacy).
  \item Generate total population and population density for each market.
  \item[] \emph{Present and understand your data}
  \item Generate appropriate tables of summary statistics.
- \item Make a graph showing the relationship between sales (in monetary terms), number of customers buying from the pharmacy and the number of pharmacies in the market.\footnote{Note that it might be appropriate to scale the measure of sales to make graphs and regression output easier to read.}
+ \item Make a graph showing the relationship between sales (in monetary terms), number of customers buying from the pharmacy and the number of pharmacies in the market.
  \item Make a plot showing the relationship between sales (in monetary terms) and the number of packages sold separately for each pharmacy chain. We can reveal that one of the chain ID's specifies hospital pharmacies.
  \item[] \emph{Estimation}
  \item Regress sale on the number of pharmacies in the market (i.e., the variable you generated in 2.) How do you interpret 
  the result?
  \item Generate a demeaned sales variable, that is, a variable showing the difference between sales and the mean sales (for the pharmacy). In addition, generate demeaned version of the variable showing number of pharmacies in the market.
- \item Make a graph showing the relationship between the two variables you just created. Compare this graph to the corresponding graph from Task 4.
+ \item Make a graph showing the relationship between the two variables you just created. Compare this graph to the corresponding graph from Task 5.
  \item Regress demeaned sales on the demeaned number of pharmacies in the market.
- \item Run a fixed-effects regression of sale on the number of pharmacies in the market.\footnote{First, use \texttt{xtset} to tell Stata that Pharmacy ID is the panel variable, and the date is the time variable. Then use \texttt{xtreg, fe}} for the regression. Compare the results with the regression in Task 9.
+ \item Run a fixed-effects regression of sale on the number of pharmacies in the market. Compare the results with the regression in Task 10
  \item Run a regression of sale on the number of pharmacies in the market, but with market, rather than pharmacy fixed-effects. Compare the results.
 \item Extra: 
 \begin{enumerate}
-\item Collapse the data set to get one observation (row) for each market per year. Your collapsed data set should consist of one column with market ID, one with the number of pharmacies in the market in a given year and one with the total population in the market (for a later task, you can also include the population within demographic segments here as well).
+\item Create a data frame with one observation (row) for each market per year. This frame should consist of one column with market ID, one with the number of pharmacies in the market in a given year and one with the total population in the market (for a later task, you can also include the population within demographic segments here as well).
 \item Make a plot showing the relationship between number of pharmacies and market size (measured by total population). Comment on the nature of the relationship -- is it convex or concave? Does an ordinary linear regression line capture the relationship well?
 \item Demean the number of pharmacies and market size within each market and plot the relationship. Compare with the results above and discuss.
 \item Explore whether the number of pharmacies in a market is sensitive to local demographics (compared to an overall increase in population).
