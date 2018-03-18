@@ -1,0 +1,153 @@
+---
+title: "Lab 5 Examples"
+date: "March 21, 2018"
+output: 
+  html_notebook: 
+    highlight: tango
+    theme: flatly
+    toc: yes
+    toc_float: yes
+---
+
+```{r Setup, include = FALSE}
+rm(list=ls())
+library(tidyverse)
+library(caret) #Use the command install.packages("caret") to install the package
+library(haven)
+library(margins)
+library(foreach)
+```
+
+We begin by reading the dataset into R.
+
+```{r read data}
+fishdata <- read_dta("fisheries.dta")
+```
+
+If we look at the data, we see that the variables preservation, area and condition are stored as labelled numeric vectors. It will be more convenient for us to have them as factor variables, so we use the function as_factor from the haven package to convert them.
+
+```{r convert to factors}
+fishdata <- as_factor(fishdata)
+```
+
+#Descriptive Statistics
+
+##1
+To do
+
+##2
+To do
+
+#Divide the data into test and training sets
+
+##3
+
+###a and b
+We split the data into a training set containing 80% of the observations and a testing set containing the remaining 20%. These percentages are fairly common choices and should provide a good balance between having a large dataset on which to train the model and a sufficiently large testing set for it to be fairly representative. We use the function createDataPartition from the caret package to randomly allocate observations to the training and test set. We set the seed before allocating the variables to make sure our results can be reproduced.
+
+```{r data splitting}
+set.seed(10101)
+trainrows <- createDataPartition(y=fishdata$superior,
+                    p=0.8,
+                    list=FALSE)
+
+training <- fishdata[trainrows,]
+testing <- fishdata[-trainrows,]
+
+rm(fishdata,trainrows)
+```
+
+##4
+To do
+##5
+
+###a
+
+```{r first logistic regression}
+logit1 <- glm(factor(superior) ~ condition,
+              data=training,
+              family=binomial())
+```
+
+The raw coefficients in a logistic regression are hard to interpret, but if we want to get some idea of what the estimated model implies we can use tha margins package to calculate average marginal effects (AMEs) which we can interpret in a similar way to the OLS coefficients we are used to (if you estimate the same equation with OLS you will see that the coefficients are very similar). 
+
+```{r marginal effects, warning=FALSE}
+summary(margins(logit1))
+```
+
+###b
+
+```{r obtaining predictions}
+training <- training %>% 
+    mutate(yhat=predict(logit1,type="response"))
+```
+
+###c
+
+```{r}
+training <- training %>%
+    mutate(class=round(yhat,0)) #Rounding to the neareast integer gives us the classification
+```
+
+###d
+
+We could do this using the tidyverse:
+
+```{r condition vs yhat 1}
+training %>% 
+    count(condition,yhat)
+```
+
+However, if we want to also show groups with zero observations, it is easier in base R:
+
+```{r condition vs yhat 2}
+table(Condition=training$condition,
+      "Prediction (yhat)"=round(training$yhat,4))
+```
+We see that all observations with condition equal to "Rund" got a predicted
+probability of of superior equal to 78.77. All observations with "Sløyd med hode" 
+got a predicted probability of superior equal to 27.89, and all observations with
+"Sløyd uten hode, rundsnitt" got a predicted probability of superior equal to 9.05
+
+###e
+To do
+
+###f
+
+To do
+
+###g
+
+To do
+
+###h
+
+The accuracy of the model in the training set is the mean of the success variable we just generated.
+
+```{r calculate training set accuracy}
+mean(training$success)
+```
+
+In order to obtain the accuracy in the testing set we will have to repeat the steps of calculating predictions and classifying observations.
+
+```{r calculate testing set accuracy}
+testing <- testing %>% 
+    mutate(yhat=predict(logit1, #Calculate predictions
+                        newdata=testing,
+                        type="response"),
+           class=round(yhat,0), #Classifying observations
+           success=ifelse(class==superior,1,0)) #Generate success variable
+```
+
+We can now calculate the success rate in the testing set as well:
+
+```{r}
+mean(testing$success)
+```
+
+We see that the model classified 78.1 percent of the observations in the training set correctly, and 77.9 percent of the observations in the test set correctly. This is a bit better than the about 71 percent that would be classified correctly
+by classifying all observations as non-superior. Also, we do not seem to have a problem with overfitting, since the performance on test set and training set is very similar. (This is not suprising since we have a lot of observations and a simple model.)
+
+##6 and 7
+
+To do
