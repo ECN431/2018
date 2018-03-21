@@ -1,0 +1,907 @@
+---
+title: "Lab 3"
+date: "February 16, 2018"
+output: 
+  html_notebook: 
+    highlight: tango
+    theme: flatly
+    toc: yes
+    toc_float: yes
+---
+
+RStudio keeps track of the code chunks in the document (see the menu near the bottom left of the code window, to the right of the "line number:column number" counter). Optionally, you can give any chunk a name, for instance "Setup" below. This can make it easier to navigate the code chunks afterwards.
+
+```{r Setup, include = FALSE}
+library(tidyverse)
+library(stargazer)
+library(knitr)
+library(lubridate)
+
+pharma <- read_csv('pharma.csv')
+```
+
+
+# Present and understand your data
+
+## 1. Descriptive by group
+To identify the ATC's that get generic entry with an indicator, you can either just take the maximum of the generic indicator within ATC (first line below), or compare the "atc" variable with a vector of the names/ATC's (in text strings) that are reported to experience generic entry (third and fourth line below).
+```{r Find ATCs with entry}
+pharma <- pharma %>% group_by(atc) %>% mutate(entryatc = max(generic))
+
+entryatcs <- c("M05BA04", "N02CC01", "A10BB12", "G03HB01", "G04CA02")
+pharma$entryatc <- pharma$atc %in% entryatcs
+```
+
+To summarize the data by group, we could either separately make summaries using an appropriate `filter` (e.g., `pharma %>% filter(entryatc == 1)`), or, to get both in one table, using the code below. Here, we:
+1. select the variables we are interested in summarizing
+2. group the resulting data by whether it's an ATC code that experiences entry or not 
+3. rescale ddd to be in thousand (not necessary, just to make the resulting table nicer)
+4. generate the average for all the variables (this returns the variables in columns with a row for each group)
+5. gather the columns into key-value pairs, except for the entryatc column, such that we have all the values in a value column
+6. Spread the values corresponding to each entryatc group into columns (use entryatc as key)
+7. (cosmetic) round all numeric columns to one decimal place using `mutate_if`
+```{r Average by group}
+pharma %>% 
+  select(entryatc, price, maxprice, ddd, inprice, generic, dddperpack) %>% 
+  group_by(entryatc) %>% 
+  mutate(ddd = ddd / 1000) %>% 
+  summarize_all(mean) %>% 
+  gather(key = variable, value = value, -entryatc) %>% 
+  spread(entryatc, value=value) %>% 
+  mutate_if(is.numeric, funs(round(.,1)))
+```
+Note that you get an error, as well as a row for atc with the above sequence of code. The reason is that we earlier grouped the data by atc to generate entryatc (one of the ways of finding ATC's that experience entry). Since we assigned the result to `pharma`, the dataframe "remembers" the `group_by` operation, and wants to keep the grouping variable, even when we filter. A solution to this is to `ungroup` the data first, e.g.,
+```{r Ungroup data}
+pharma <- pharma %>% ungroup()
+```
+then running the above code again:
+```{r Average by group after ungrouping}
+pharma %>% 
+  select(entryatc, price, maxprice, ddd, inprice, generic, dddperpack) %>% 
+  group_by(entryatc) %>% 
+  mutate(ddd = ddd / 1000) %>% 
+  summarize_all(mean) %>% 
+  gather(key = variable, value = value, -entryatc) %>% 
+  spread(entryatc, value=value) %>% 
+  mutate_if(is.numeric, funs(round(.,1)))
+```
+
+We see that the groups look quite similar. Note that this is not a necessary
+prerequesite for a successful DiD analysis - only that the common trends assumption
+holds (same development in the absence of treatment).
+The drugs who experience entry have lower prices and lower sold quantity on average.
+This could both be due to the drugs having lower prices on average over the whole
+period, or prices decreasing, which we will look closer at later. Since the outcomes
+are measured at the product level, the lower sales is per specific product, which
+might then also be driven by competition in the post-period (or it could be that
+they have lower sales on average).
+The most notable fact is that prices for the no-entry group are on average very
+close to the price ceiling, while for the group experiencing entry the difference
+is larger (relative difference as well).
+Generics seems to be a quite large share of the products sold, since they have
+a 40% share in the sample overall for the group that experience entry. Note that
+this is among products marketed, and not measured in market share (since they
+could have less or more than proportional sales on average per product).
+All in all, there's not much we can read out from this table, and most of what
+we want to know we would have to gather from graphs or regressions. You should
+view the descriptives here more in line with telling us something about average
+sizes and variation (standard deviations) in the market, which we can use to
+interpret estimated sizes.
+
+## 2. Histogram of prices
+One way to create a date variable from the year and month variables, is to generate a number of the format *YYYYMMDD* and pass it to the `ymd` function from lubridate.
+```{r Create date}
+pharma <- pharma %>% mutate(date = ymd(year * 10000 + month * 100 + 1))
+```
+
+```{r Find dates with generic competition within ATC}
+pharma <- pharma %>% group_by(atc, date) %>% mutate(gencomp = max(generic))
+```
+
+Histogram of prices (per package)
+```{r Price histograms without generic competition}
+pharma %>% filter(gencomp == 0) %>% ggplot(mapping = aes(price)) +
+  geom_histogram(bins = 50, alpha=0.5) +
+  facet_grid(entryatc ~ ., scales = 'free_y', labeller = as_labeller(c(`FALSE`="No entry", `TRUE`="Entry"))) +
+  labs(x="Price NOK/DDD")
+```
+
+To normalize prices, we express them in NOK per DDD. To acheive this, we can divide by DDD per package (since the price is given in NOK per package). `facet_grid` allows us to make separate plots by splitting on (discrete) variables. Read the documentation for facet_grid to understand how we can get separate plots along columns or rows. Since the number of observations are very different between the groups, and we use a histogram, we let the scale of the y-axis to be different between the plots with the option `scales = 'free_y'`. The variable entryatc takes the values `TRUE` and `FALSE` which is not too informative as panel labels. We therefore set a custom label using the `labeller` option, where the function `as_labeller` can take a named vector as argument, translating between `TRUE` and `FALSE` and more informative names.
+```{r Price per DDD histograms without generic competition}
+pharma %>% filter(gencomp == 0) %>% ggplot(mapping = aes(price / dddperpack)) +
+  geom_histogram(bins = 50, alpha=0.5) +
+  facet_grid(entryatc ~ ., scales = 'free_y', labeller = as_labeller(c(`FALSE`="No entry", `TRUE`="Entry"))) +
+  labs(x="Price NOK/DDD")
+```
+
+Histogram of log DDD:
+```{r log DDD histograms without generic competition}
+pharma %>% filter(gencomp == 0) %>% ggplot(mapping = aes(log(ddd))) +
+  geom_histogram(bins = 50, alpha=0.5) +
+  facet_grid(entryatc ~ ., scales = 'free_y', labeller = as_labeller(c(`FALSE`="No entry", `TRUE`="Entry"))) +
+  labs(x="Price NOK/DDD")
+```
+
+In prices per package, the group experiencing entry seems to have somewhat lower prices
+on average, while when we measure prices per standardized units, the picture
+suggests it's opposite. This does not necessarily tell us anything very important
+for the DiD analysis by itself, though the large difference in how prices "look"
+when measured per package or per DDD might suggest that we would prefer the
+standardized measure when analyzing development of prices. This would avoid
+problems with interpretation that might arise if generics have different sizes
+of the packages (measured in DDD) than the originator. Also, we might be more
+interested in price measured per treatment unit (which price per DDD comes closer
+to), rather than the price per package itself. The fact that prices seem to be higher
+for many drugs that experience entry, compared to the ones without entry, seems sensible,
+and should make us want to investigate the results more carefully. What I have in mind is
+a situation where we have selection on which drugs get entry and not.
+The picture for log of DDD shows that the two groups look fairly similar in terms
+of distribution across different products in terms of sales, though, again, it
+doesn't necessarily tell us anything very important about our analysis (by itself).
+
+## 3. Number of originator products by group
+Grouping the data by entryatc, atc and date, we can get the number of unique originator products by generating a variable that is the sum of and indicator for "not being generic" (`generic == 0`). The grouping by entryatc might seem redundant at this point, but it makes it easier to average over the ATC's with and without entry afterwards.
+```{r}
+pharma %>% group_by(entryatc, atc, date) %>% 
+  summarize(norg = sum(generic == 0)) %>% 
+  group_by(date, entryatc) %>% 
+  summarize(norg = mean(norg)) %>% 
+  ggplot(aes(date, norg, linetype=entryatc)) + geom_line() +
+  labs(x="Date", y="Originator products")
+```
+The number of originator products follows a quite different time profile
+between the two groups, even if we were to adjust for scale and level.
+Interestingly, there seems to be a sharp increase of number of products for the
+control group towards the end of the sample period, which is not reflected in
+the treatment group. This could potentially be related some deviations in this
+period in plots we'll make later. It would not be advisable to use a DiD strategy
+to estimate whether generic entry has an impact on the number of products/unique
+packages the originator offers, due to there being strong evidence against common
+trends.
+
+To highlight the period of entry, we can add vertical lines at the first and last date of entry by using `geom_vline`. We can define a vector with these dates:
+```{r}
+entrydates = as.Date(c("2005-12-01", "2006-02-01"))
+```
+where `as.Date` creates a date object from each of the strings in the vector.
+
+However, it is not completely as straightforward to make dates work with `geom_vline` as with a numeric scale. However, it turns out that the simple solution is to coerce the vector of dates to numeric using `as.numeric`. In the call to `aes` in the plot, we specify `linetype=entryatc`, which will give us a separate line for each group when calling `geom_line` with different line styles for each group.
+```{r DiD plot DDD average over products}
+pharma %>% filter(generic == 0) %>% group_by(entryatc, date) %>% 
+  summarize(ddd = mean(ddd)) %>% 
+  ggplot(aes(x=date, linetype=entryatc)) +
+  geom_line(aes(y=ddd)) +
+  geom_vline(xintercept = as.numeric(as.Date(c("2005-12-01", "2006-02-01"))), linetype = 'dotted') +
+  labs(x='Date', y='DDD')
+```
+
+With log of DDD:
+```{r DiD plot log DDD average over products}
+pharma %>% filter(generic == 0) %>% group_by(entryatc, date) %>% 
+  summarize(ddd = log(mean(ddd))) %>% 
+  ggplot(aes(x=date, linetype=entryatc)) +
+  geom_line(aes(y=ddd)) +
+  geom_vline(xintercept = as.numeric(as.Date(c("2005-12-01", "2006-02-01"))), linetype = 'dotted') +
+  labs(x='Date', y='log DDD')
+```
+There are some overall features matching well in the development in average sales
+per product between the two groups, such as low sales in the beginning of the
+year, and spikes towards December (this is a well-known pattern in the Norwegian
+pharmaceutical market, driven by the annual cycle of the reimbursement scheme -
+December will be the last time one can file prescriptions without incurring a
+copayment (egenandel) if one has reached the out-of-pocket maximum for medical
+expenditures during the year).
+
+From the control group, this seems to be largely
+a seasonal effect which actually makes it harder to immediately pick out
+potentially severe deviations from equal pre-treatment trends. It should be noted
+that matching seasonal pattern is a good thing, and we would like these to be
+equal between the groups. One could make an argument that the average development
+net of differing seasonality is the only thing that needs to line up, though it
+would (and should) make us doubt how similar we should expect the groups to be
+in terms of development over time. Noting this, the only necessary assumption
+is that the treatment group would develop as the control in the absence of
+treatment, and that treatment is uncorrelated with unobservables,
+both *conditional on controls*.
+
+An improvement would be to partial out seasonality (controlling for, e.g., month
+of year) before plotting, which would allow us to focus on other features of
+the pre-trends, which we can see from the plot have some worrying differences.
+If this was all that we had, it would be what it is, and we could perform a DiD
+analysis, noting that there are reasons to not take the estimates too seriously.
+
+Ideally, we would like to explain and improve this. One obvious contender is due
+to the level of aggregation we are averaging over - for each unique product. From
+the plot above, we see that the amount of products within each group follows a
+different development, which will tend to impact the average of sales over products,
+at least as far as changes in the number of products changes the distribtion of
+sales between products (for instance, more products leading to each product selling
+less). This argument leads us to consider looking at the development at the ATC
+level for originator products later, using total sales over all products within 
+each ATC code as the observations.
+
+
+
+## 4. Price development by group
+Note that we only define the horizontal axis with `aes` in the call to `ggplot` below, while we specify aesthetics with different y-variables (price and maxprice) in separate calls to `geom_line` to plot both variables. Also note that I specify `linetype` in the `aes` for each call to `geom_line` below. This is to achieve two things: 1) That the lines are drawn differently (could be done easier), and 2) that we we automatically get a legend in the plot specifying which line is which. The command `scale_linetype_manual` allows us to specify how the lines should look (giving a named vector to the option `values`), as well as potentially other options for how the legend should look (the first, empty string is the title of the legend).
+```{r}
+pharma %>% filter(generic == 0) %>% group_by(entryatc, date) %>% 
+  summarize(price = mean(price / dddperpack),
+            maxprice = mean(maxprice / dddperpack)) %>% 
+  ggplot(aes(date)) +
+  geom_line(aes(y=price, linetype = "Price")) + geom_line(aes(y=maxprice, linetype = "Price ceiling")) +
+  geom_vline(xintercept = as.numeric(as.Date(c("2005-12-01", "2006-02-01"))), linetype = 'dotted') +
+  facet_grid(entryatc ~ ., scales = "free_y", labeller = as_labeller(c(`FALSE`="No entry", `TRUE`="Entry"))) +
+  scale_linetype_manual("", values = c("Price"=1, "Price ceiling"=2)) +
+  labs(x='Date', y='Price (NOK/DDD)')
+```
+In the pre-entry period, prices are as good as equal to maximum prices for the
+originator products. We can basically consider prices to be set as high as
+possible (at least on average), equal to the maximum prices, meaning that the
+maximum price is binding. Further, we also see that all differences in development
+of prices pre-entry is driven by "changes" in the maximum price. From the
+information in the introduction, we know that the price ceiling seldom changes,
+which means that what we see is to a large extent driven by changes in which
+products are actually sold, linking back to the development in the number of
+unique products offered in each group.
+
+In the post-entry period, the treatment group starts diverging from the price
+ceiling more and more, telling us that the originator responds to entry by
+lowering prices on average (at least for some products - if we were to look into 
+each ATC code, we would see that there are differences in response across these).
+
+The control group mostly keeps pricing at the price ceiling, seeming to suggest
+that the pricing strategy is constant over time, though towards the end of the
+sample period, we see that prices starts diverging from the price ceiling (on
+average). This coincides with the period in which a lot of new products seems
+to be introduced (graph from task 3), and is possibly related to the composition
+of goods changing and/or the pricing strategy changing for one or more ATC codes
+in the control group.
+
+If we were to do a DiD analysis on prices, the dependence on the max price is 
+something that we would need to take into account (see task 10c). Also, we would
+probably want to be a bit wary of our estimated treatment effect, due to the
+deviation from price ceiling pricing for the control group towards the end of the
+period. Ideally, we would like to investigate where this deviation is coming from,
+and try to figure out the cause, but this is outside the scope of this exercise.
+
+## 5. DiD graphs for sales
+Specify the entryatc variable as a factor with lables to facilitate labels in plots.
+```{r Aggregate data}
+atcpharma <- pharma %>% group_by(atc, generic, date) %>% 
+  summarize(
+    price = weighted.mean(price / dddperpack, ddd),
+    maxprice = weighted.mean(maxprice / dddperpack, ddd),
+    ddd = sum(ddd),
+    entryatc = factor(mean(entryatc), levels=c(0, 1), labels=c("No entry", "Entry")),
+    gencomp = factor(mean(gencomp), levels=c(0, 1), labels=c("No competition", "Competition"))
+    )
+```
+
+Note that giving a factor variable to the options `shape` and `color` will make ggplot draw lines and markers of different colors and shapes for each group in the factor variable. Below, `shape` only matters for `geom_point`, while `color` matters for both `geom_line` and `geom_point`. 
+```{r DiD plot DDD}
+atcpharma %>% filter(generic == 0) %>% group_by(entryatc, date) %>% 
+  summarize(ddd = mean(ddd)) %>% 
+  ggplot(aes(date, ddd, shape=entryatc, color=entryatc)) + 
+  geom_line() + geom_point() + 
+  geom_vline(xintercept = as.numeric(entrydates), linetype = 'dotted') +
+  theme(legend.title = element_blank()) +
+  labs(x="Date", y="DDD")
+```
+
+In many cases, it can be desirable and look more professional to not use colors to separate information in plots. Instead, one could for instance use different linestyles in addition to different markers:
+```{r DiD plot DDD nocolor}
+atcpharma %>% filter(generic == 0) %>% group_by(entryatc, date) %>% 
+  summarize(ddd = mean(ddd)) %>% 
+  ggplot(aes(date, ddd, shape=entryatc, linetype=entryatc)) + 
+  geom_line() + geom_point() + 
+  geom_vline(xintercept = as.numeric(entrydates), linetype = 'dotted') +
+  theme(legend.title = element_blank()) +
+  labs(x="Date", y="DDD")
+```
+
+Also do the plots for average of log DDD. Note that we can also manually control the style of the lines using `scale_linetype_manual`, for instance if we think that the control group should have a dashed line, while the treated group should have a solid one (or something else entirely).
+```{r DiD plot log DDD}
+atcpharma %>% filter(generic == 0) %>% group_by(entryatc, date) %>% 
+  summarize(lddd = mean(log(ddd))) %>% 
+  ggplot(aes(date, lddd, shape=entryatc, linetype=entryatc, group=entryatc)) + 
+  geom_line() + geom_point() + 
+  geom_vline(xintercept = as.numeric(entrydates), linetype = 'dotted') +
+  theme(legend.title = element_blank()) +
+  scale_linetype_manual(values=c("dashed", "solid")) +
+  labs(x="Date", y="ln DDD")
+```
+Why the log-transform seems to work better:
+Each point represents an average over the values for each atc code in the group
+The log transform does something quite specifically to the values of the
+underlying data, in terms of how it affects variation - larger values tends
+to be compressed more, so seasonal, random or other types of changes for drugs
+with high quantity sold (which we would expect to have larger absolute changes
+over time), will tend to matter less. This is exactly what we are asking for
+(when taking logs: keep in mind that this is not necessarily a statement about what we want),
+and is related to the approximate interpretation of log-coefficients as
+percentage changes. This is likely desirable in this context, as the different
+ATC codes have highly varying levels of sale, and the development over time is
+likely more aligned when we are looking at something close to average relative
+changes, rather than average absolute changes.
+
+Generally about the DiD assumptions here:
+Especially the plot in logs seems to have a much closer correspondence with the
+development of the control group in the pre-entry period, compared to the graph
+from task 3. Still, the graphs conatin a lot of large seasonal movements which
+makes smaller - but potentially important - deviations difficult to assess. We
+absolutely want to see this graph, before any treatment of the data, to assess
+how the series line up before we introduce control. After this, we could partial
+out reasonable controls (e.g., month-of-year dummies for seasonality) and generate
+the plot again to assess more carefully. Even without this, the pattern looks
+very similar in the pre-entry period for the two groups (we could do a more
+formal test/assessment of this, which we postpone to task 10b).
+
+It is obvious that the ATC codes experiencing generic
+entry have higher sales on average in the pre-period.
+Treatment is thus correlated with size of sale, though this is
+not a problem in itself, since we control for the average size difference by the
+indicator on the treatment group (simple example of uncorrelatedness conditional on
+controls). Another question is whether this tells us something else about the
+drugs, which might be correlated with treatment and not included in the regression.
+We could think of profitability, in the sense that the drugs experiencing entry
+have both higher sales AND relatively high prices compared to sales. This would
+then need to be time-varying (otherwise the indicator for treatment group would
+solve the problem), such that entry happens at a point where profitability
+for instance is growing. In principle, we could include some controls for this,
+though it is hard to come up with exactly what that would be. One possibility
+could be to control for the price ceiling, though, due to it being set as the
+average price in other countries, we could suspect that generic entry happens
+around the same period many places, depressing prices in other markets, thus
+feeding into the price ceiling in Norway. One could still try and see how and
+whether it affects anything, though one should keep in mind potential difficulties
+with controls we might be tempted to include.
+
+# Estimating diff-in-diff
+
+## 6. First DiD regression
+The issue with timing here is that the time of entry ("treatment") is not 
+common across the "treated". There are several ways to cope with this, e.g.,
+approximate solutions like setting treatment to the first or last date (which
+will understate the effect of entry to some extent by introducing measurement
+error in treatment - some units are coded as treated or not treated while they
+actually are). Since they are quite close in time, this might not have a very
+large impact, though it's far from preferrable. Another would be to "align"
+the series (setting treatment at 0), but the question is then how to normalize
+time for the untreated units. Here, I'm going to omit the dates in the middel.
+This will do the "right thing", but it will also reduce our sample, and thus
+statistical power (which is only an issue from the statistically estimated
+sampling error underlying standard errors and confidence intervals).
+There are better options available in some cases, as we will see in the next
+task.
+```{r define periods}
+atcpharma <- atcpharma %>% 
+  mutate(
+    postentry = date >= "2005-12-01",
+    interrim = date >= "2005-12-01" & date < "2006-02-01"
+    )
+```
+
+Remember that `filter` selects rows from data according to some criterion. In expressions involving logical variables, `!` is negation, i.e., "not". Here, `!interrim` means that `filter` will select all rows except the ones corresponding to the two first months where entry happens.
+Thus, we do the regression conditional on being later or earlier than the two months
+where only certain treated units are treated. This is sometimes referred to
+as a "doughnut hole" (mostly used when we are uncertain about the exact timing
+of treatment for different units)
+(The interactions generated by using `*` does exactly what we want for the
+simple DiD regression specification)
+```{r DiD estimates DDD, results='asis'}
+did.base <- lm(log(ddd) ~ entryatc * postentry, data = filter(atcpharma, !interrim))
+
+stargazer(did.base,
+          type="html",
+          style='aer',
+          digits = 2,
+          covariate.labels = c("Entry ATC", "After entry", "Entry ATC x After entry"),
+          dep.var.labels = c("Log DDD"),
+          keep.stat = c("n","rsq"))
+```
+
+
+## 7. Rollout DiD regression
+We need to reformulate the specification slightly. We include, as before,
+an indicator for the treatment group. Since we have a full set of time-fixed
+effects, any "after period" dummy would be collinear with this (completely 
+swamped up). We thus only need to use the indicators for facing generic
+competition (actual treatment status). This is often referred to as a "rollout"
+setup, where the timing of treatment differs between units. We still assume
+common trends, which is now picked up very flexibly over time by the common
+time-fixed effects. We "force" R to include indicators for each separate date
+(except one that will be dropped when we include a constant) by specifying explicitly
+that date should be treated as a factor variable. When generating the table, we can omit
+all the coefficients involving `date`, and replace it with a label indicating whether time-fixed
+effects are included or not.
+```{r DiD estimates DDD time FE, results='asis', warning=FALSE}
+did.timefe <- lm(log(ddd) ~ entryatc + gencomp + factor(date), data = atcpharma)
+
+stargazer(did.base, did.timefe,
+          type="html",
+          style='aer',
+          digits = 2,
+          covariate.labels = c("Entry ATC", "After entry", "Entry ATC x After entry", "Generic competition"),
+          dep.var.labels = c("Log DDD"),
+          omit = "date",
+          omit.labels = "Time FE",
+          keep.stat = c("n","rsq"))
+```
+The results are (fortunately) virtually unchanged.
+One note on the above table: It might be better to slightly change the
+specification of the first regression, so that the treatment effect is aligned
+in the table (including separate indicators for treatment group, post-treatment,
+and treatment status), which probably makes it easier to compare:
+```{r DiD estimates DDD aligned, results='asis', warning=FALSE}
+did.base2 <- lm(log(ddd) ~ entryatc + postentry + gencomp, data = filter(atcpharma, !interrim))
+
+stargazer(did.base2, did.timefe,
+          type="html",
+          style='aer',
+          digits = 2,
+          covariate.labels = c("Entry ATC", "After entry", "Generic competition"),
+          dep.var.labels = c("Log DDD"),
+          omit = "date",
+          omit.labels = "Time FE",
+          keep.stat = c("n","rsq"))
+```
+The effect of generic entry on sales of of originator drugs is then a reduction
+of 0.93 log units. The approximation of log-points to percentages only work
+well for relatively small numbers, while this can be said to be a
+big number (if we were to use the approximation, we would say that it leads to
+a 93% reduction in DDD-sales of originator drugs(!)). The formula for the exact
+percentage change from log-unit coefficients is exp(coeff) - 1, which gives us
+a `r round(exp(did.timefe$coefficients['gencompCompetition']) - 1, 2) * 100`% reduction,
+which is quite far away from what the approximation would suggest.
+
+## 8. DiD analysis for prices
+atcpharma %>% filter(generic == 0) %>% group_by(entryatc, date) %>% 
+  summarize(lddd = mean(log(ddd))) %>% 
+  ggplot(aes(date, lddd, shape=entryatc, linetype=entryatc, group=entryatc)) + 
+  geom_line() + geom_point() + 
+  geom_vline(xintercept = as.numeric(entrydates), linetype = 'dotted') +
+  theme(legend.title = element_blank()) +
+  scale_linetype_manual(values=c("dashed", "solid")) +
+  labs(x="Date", y="ln DDD")
+  
+```{r DiD plot price}
+atcpharma %>% filter(generic == 0) %>% group_by(entryatc, date) %>% 
+  summarize(price = mean(price)) %>% 
+  ggplot(aes(date, price, shape=entryatc, linetype=entryatc, group=entryatc)) + 
+  geom_line() + geom_point() + 
+  geom_vline(xintercept = as.numeric(as.Date(c("2005-12-01", "2006-02-01"))), linetype = 'dotted') +
+  theme(legend.title = element_blank()) +
+  scale_linetype_manual(values=c("dashed", "solid")) +
+  labs(x="Date", y="Price (NOK/DDD)")
+```
+
+```{r DiD plot log price}
+atcpharma %>% filter(generic == 0) %>% group_by(entryatc, date) %>% 
+  summarize(price = mean(log(price))) %>% 
+  ggplot(aes(date, price, shape=entryatc, linetype=entryatc, group=entryatc)) + 
+  geom_line() + geom_point() + 
+  geom_vline(xintercept = as.numeric(as.Date(c("2005-12-01", "2006-02-01"))), linetype = 'dashed') +
+  theme(legend.title = element_blank()) +
+  scale_linetype_manual(values=c("dashed", "solid")) +
+  labs(x="Date", y="log Price (NOK/DDD)")
+```
+Not obvious that we prefer any of these.
+There are apparent deviations from common trend in the pre-period.
+We should be wary of the results from a regression here.
+Ideally, we would like to assess why we find this discrepancy.
+Still, the size of the fall in prices after entry is on another scale, than
+the changes in prices we see before, so if we had no other options and needed
+an answer, we could probably go with this, possibly after some adjustments for
+differences in trend (though such adjustments would not necessarily be possible
+to defend, particularly due to the prices for the control group seeming to move
+non-monotonically over time).
+We will see further down that there might be a better solution.
+
+Diff-in-diff regression, noth with doughnut hole and full date controls, to see if difference matters
+here, in a case with worse pre-trend performance:
+```{r DID estimates price, results='asis', warning=FALSE}
+did.price <- lm(price ~ entryatc + postentry + gencomp, data = filter(atcpharma, !interrim))
+did.pricetimefe <- lm(price ~ entryatc + gencomp + factor(date), data = atcpharma)
+
+did.lprice <- lm(log(price) ~ entryatc + postentry + gencomp, data = filter(atcpharma, !interrim))
+did.lpricetimefe <- lm(log(price) ~ entryatc + gencomp + factor(date), data = atcpharma)
+
+stargazer(did.price, did.pricetimefe, did.lprice, did.lpricetimefe,
+          type="html",
+          style='aer',
+          digits = 2,
+          covariate.labels = c("Entry ATC", "After entry", "Generic competition"),
+          dep.var.labels = c("Price", "Price", "Log price", "Log price"),
+          omit = "date",
+          omit.labels = "Time FE",
+          keep.stat = c("n","rsq"))
+```
+The estimated treatment effect on prices in logs implies a sizeable reduction
+in prices of between `r round(exp(did.lpricetimefe$coefficients['gencompCompetition']) - 1, 2) * 100` and `r round(exp(did.lprice$coefficients['gencompCompetition']) - 1, 2) * 100`% 
+(exp(`r round(did.lpricetimefe$coefficients['gencompCompetition'], 2)`) - 1 and 
+exp(`r round(did.lprice$coefficients['gencompCompetition'], 2)`) - 1).
+Here, the inclusion of a full set of time dummies changes the results somewhat
+more, though the standard errors suggests that the differences aren't necessarily
+far from one another compared to the sampling uncertainty.
+
+## 9. DiD analysis for total DDD
+```{r Aggregate by ATC and date}
+totalddd <- atcpharma %>% group_by(atc, date) %>% 
+  summarize(
+    ddd = sum(ddd),
+    entryatc = first(entryatc),
+    postentry = first(postentry),
+    gencomp = first(gencomp)
+  )
+```
+
+```{r DiD plot total DDD}
+totalddd %>% group_by(entryatc, date) %>% 
+  summarize(lddd = mean(log(ddd))) %>% 
+  ggplot(aes(date, lddd, shape=entryatc, linetype=entryatc)) +
+  geom_line() + geom_point() +
+  geom_vline(xintercept = as.numeric(as.Date(c("2005-12-01", "2006-02-01"))), linetype = 'dotted') +
+  theme(legend.title = element_blank()) +
+  scale_linetype_manual(values=c("dashed", "solid")) +
+  labs(x="Date", y="ln DDD")
+```
+
+The seasonality in the plot above makes it hard to tell whether anything really happens. We can partial out the average monthly pattern, which is a strong, recurring relationship here: Take the residuals after a regression on indicators for month (optionally adding back the average value, to make the level comparable).
+```{r DiD plot total DDD residualized}
+totalddd %>% group_by(entryatc, date) %>% 
+  summarize(lddd = mean(log(ddd))) %>% 
+  ggplot(
+    aes(date, residuals(lm(lddd ~ factor(date))) + mean(lddd), shape=entryatc, linetype=entryatc)
+    ) +
+  geom_line() + geom_point() +
+  geom_vline(xintercept = as.numeric(as.Date(c("2005-12-01", "2006-02-01"))), linetype = 'dotted') +
+  theme(legend.title = element_blank()) +
+  scale_linetype_manual(values=c("dashed", "solid")) +
+  labs(x="Date", y="ln DDD (residualized)")
+```
+
+```{r DiD regression total DDD, results='asis', warning=FALSE}
+totalddd <- totalddd %>% mutate(interrim = date == "2005-12-01" | date == "2006-01-01")
+did.totddd <- lm(log(ddd) ~ entryatc + postentry + gencomp, data=filter(totalddd, !interrim))
+did.totdddtimefe <- lm(log(ddd) ~ entryatc + gencomp + factor(date), data=totalddd)
+
+stargazer(did.totddd, did.totdddtimefe,
+          type="html",
+          style='aer',
+          digits = 2,
+          title = "Regression of total sales in DDD within ATC",
+          covariate.labels = c("Entry ATC", "After entry", "Generic competition"),
+          dep.var.labels = c("Log DDD", "Log DDD"),
+          omit = "date",
+          omit.labels = "Time FE",
+          keep.stat = c("n","rsq"))
+```
+Results are virtually identical. Seems to be no effect on total sales.
+This can make sense, if we believe that total demand for drugs is not really
+responsive to prices or availability of generics, for instance if doctors
+prescribe, and patients buy anyhow, and doctors don't factor in prices/prices
+are a very small part of consideration when prescribing.
+
+
+Make a factor variable called "Type" from the generic indicator, to facilitate better labels in plots.
+```{r}
+atcpharma <- atcpharma %>%
+  mutate(
+    Type = factor(generic, levels=c(0, 1), labels=c("Originator", "Generic"))
+    )
+```
+
+Make a separate data object for this aggregation, since we will be using it in several figures.
+```{r}
+genorg <- atcpharma %>% filter(entryatc == "Entry") %>% 
+  group_by(Type, date) %>% 
+  summarize(
+    lddd = mean(log(ddd)),
+    totddd = sum(ddd),
+    lprice = mean(log(price)),
+    lmaxprice = mean(log(maxprice))
+    ) 
+```
+
+```{r Generic vs originator sales DDD}
+ggplot(genorg, aes(date, totddd, linetype=Type, group=Type)) +
+  geom_line() + geom_point() +
+  geom_vline(xintercept = as.numeric(as.Date(c("2005-12-01", "2006-02-01"))), linetype = 'dotted') +
+  theme(legend.title = element_blank()) +
+  labs(x="Date", y="DDD")
+```
+
+
+```{r Generic vs originator sales log DDD}
+ggplot(genorg, aes(date, lddd, linetype=Type, group=Type)) +
+  geom_line() + geom_point() +
+  geom_vline(xintercept = as.numeric(as.Date(c("2005-12-01", "2006-02-01"))), linetype = 'dotted') +
+  theme(legend.title = element_blank()) +
+  labs(x="Date", y="Log DDD")
+```
+
+
+```{r price development originator vs generic}
+ggplot(genorg, aes(x=date)) +
+  geom_line(aes(y=lprice, linetype = "Price")) + geom_line(aes(y=lmaxprice, linetype = "Price ceiling")) +
+  geom_vline(xintercept = as.numeric(as.Date(c("2005-12-01", "2006-02-01"))), linetype = 'dotted') +
+  facet_grid(Type ~ .) + scale_linetype_manual("", values = c("Price"="solid", "Price ceiling"="dashed")) +
+  labs(x='Date', y='ln Price')
+```
+We see from these figures that generics capture a substantial share of the market
+on average, and it is increasing over time (when considering the corresponding
+decrease in originator, which might not always seem so large, remember that we
+are measuring quantity in logs here, which means that we cannot pick out market
+shares as easily from the plot). The pattern around the three months with generic
+entry is most likely driven by compositional changes in how large sales are in
+each of the ATC codes that experience entry, as well as how large generic sales
+are initially within them.
+
+From the price plot, we see that the originator is more or less pricing at the price
+ceiling on average well into the post-entry period. The change in price as we
+move from the first month of generic entry to the "proper" after-period (when
+all ATC's are exposed to entry) is highly likely due to a compositional effect.
+In the first month, in December 2005, the generic group only consists of two ATC
+codes, which presumably have higher prices on average, something that is also
+suggested by the changes in average maximum price. The originators drop prices
+below the price ceiling going into 2007, while te generics seem to drop prices
+even more on average - both corresponding to a decrease in the price ceiling.
+The major part of the picture is that generics have a lower price per unit overall,
+but also that the price ceiling on average is a bit lower (this is due to generics
+typically selling larger packages, which tends to be cheaper per unit, something
+that you have not been asked to look at here)
+
+## 10. Extra
+### (a) DiD plot, partialling out controls
+Take the residuals from the previous regression of log DDD on treatment variables and time-fixed effects, and add back the estimated effect of the treatment variables. There are several ways to do this. Below, I use the `predict.lm` function, which calculates fitted values based on a regression using a new dataset. I feed it the same dataset, where I change the date to May 2004, which is the first (omitted) date in the data, thus only adding back the intercept and estimated effect of treatment variables.
+```{r}
+atcpharma['rlddd'] <- predict.lm(did.timefe, mutate(atcpharma, date = as.Date("2004-05-01"))) + did.timefe$residuals
+```
+
+
+```{r DiD plot DDD with time FE partialled out}
+atcpharma %>% filter(generic == 0) %>% group_by(entryatc, date) %>% 
+  summarize(rlddd = mean(rlddd)) %>%
+  ggplot(aes(date, rlddd, shape=entryatc, linetype=entryatc, group=entryatc)) + 
+  geom_line() + geom_point() + 
+  geom_vline(xintercept = as.numeric(entrydates), linetype = 'dotted') +
+  theme(legend.title = element_blank()) +
+  scale_linetype_manual(values=c("dashed", "solid")) +
+  labs(x="Date", y="ln DDD")
+```
+We see that the DiD plot actually does not look as good as before, presumably
+since it's easier to pick out the deviations here, and what looks like a small
+trend for the treatment group before treatment. This is most likely due to a
+selection, where drugs getting generic entry are on average growing markets.
+There's still a question of how much this biases our estimates. The estimated 
+effect is very apparent, strong and convincing. Based on this plot, what we might
+like to do is find a control group which is more "similar" to the drugs getting
+competition, for instance being large and/or growing, but still having patent
+protection.
+
+Using the average package size within the ATC code as a control would likely not
+be a good idea, since it's likely that it is a result of competition as well.
+We would believe that this correlates with facing generic competition in some way,
+that might pick up part of the effect of treatment (or at least change it) in
+ways we would not like, as it should actually be considered part of the treatment
+effect of generic entry. The general form of this argument is that we should not
+control for variables which could actually be outcomes themselves (which is why,
+for instance, we do not control for prices here).
+
+### (b) Check common trends and time profile
+We could have the full time-treatment interactions in the regression. As we will
+see, the number of observations in the treatment group (5 atcs) makes this
+very imprecise, and we are very unlikely to (statistically) detect even quite large deviations
+from common trends, and maybe not even the shift in quantity afterwards.
+
+The following regression estimates a separate coefficient for each date (the average in the control group), as well as an interaction with each date and the treatment group. The regression will omit one date (the first), such that the indicator for the treatment group (entryatc) will pick up the difference between treatment and control in the first date, and the following interactions between the treatment group and date will be the change from this initial difference.
+```{r Full time interaction with treatment group}
+diffreg <- lm(log(ddd) ~ entryatc * factor(date), data=atcpharma)
+```
+
+The simplest way to assess these estimates is to do a plot of the estimated coefficients on the interactions. We extract the relevant coefficients from the estimates, which can be done by for instance the string manipulation below. The function `names` returns a vector of the names of the elements in a named vector. The `coefficients` vector of a linear model is a named vector, where the names follow the conventions of R in terms of naming regression coefficients using interactions. We can see how this looks like:
+```{r}
+names(diffreg$coefficients)
+```
+
+We are interested in all the terms containing "entryatcEntry:factor(date)". We can get the positions of these in the vector of names by using the `stringr` (part of the tidyverse) function `str_subset`, which takes a vector of strings and a pattern as arguments, where the subset in the vector that matches the pattern will be returned (note that the pattern is a [regular expression](http://stringr.tidyverse.org/articles/regular-expressions.html), and so I didn't include the parantheses, since these have special meaning and would need to be treated differently if we really needed them there). Below, I use this to get the names of the coefficients involving the interaction between the treatment group and the date. I then extract the relevant coefficients by using the subset vector of names to index the full vector of coefficients. I use the function `data_frame` to create a dataset with the coefficients as one column, and the relevant dates in another column. The relevant dates were generated using `seq.Date`, which creates a sequence of dates, taking a from-date and to-date as arguments, in addition to an argument `by` describing the time-resolution of the sequence (here: monthly).
+```{r Create data for plot of estimated effects}
+# Get vector of names of coefficients
+coeffnames <- names(diffreg$coefficients)
+# Get position in vector of interaction coefficients
+diffcoeffnames <- str_subset(coeffnames, "entryatcEntry:factor")
+# Create the range of relevant dates
+daterange <- seq.Date(from=as.Date('2004-06-01'), to=as.Date('2007-12-01'), by='month')
+# Store results in a dataframe
+diffestimate <- data_frame(coeff = diffreg$coefficients[diffcoeffnames], 
+                           date = daterange)
+```
+
+We can now plot the estimated coefficients by date, including a reference line for zero and the dates marking the rollout of treatment. The pre-trend looks quite okay, with the estimated difference always staying close to zero (which means that the difference between the treatment and control stays close to the average difference in the first date), at least compared to the change as generics enter.
+```{r Difference estimates plot}
+diffestimate %>% ggplot(aes(x=date, y=coeff)) +
+  geom_point() + geom_line(linetype='dotted') +
+  geom_hline(yintercept=0, linetype='dashed') +
+  geom_vline(xintercept = as.numeric(entrydates), linetype = 'dotted') +
+  labs(x='Date', y='Difference log DDD')
+```
+
+In many cases, we might want to also illustrate the statistical uncertainty in the estimates of how well the pre-trends correspond in the two groups. The typical way to do this would be to also plot the 95% confidence interval for each point estimate. This requires us to obtain the standard error of each estimate. To get robust standard errors, we can load the library `sandwich`, where we can get for instance heteroskedasticity-robust standard errors (as well as standard errors accounting for other types of dependence in the unobservables, such as autocorrelation and clustering).
+```{r}
+library(sandwich)
+```
+
+To get the standard errors from the estimates we can use, for instance, the function `vcovHC` (heterskedasticity consistent). This actually returns a matrix, which is called the [variance-covariance matrix](https://en.wikipedia.org/wiki/Covariance_matrix) (or just the covariance matrix) of the estimates. The relevant entries are along the diagonal, which we can extract using the function `diag`. The elements are the squares of the standard errors, such that taking the square roots (`sqrt`) gives us the standard errors. The resulting vector is also named in the same way as the coefficient vector itself, such that we can extract the terms corresponding to the standard errors of the interaction coefficients in the same way as above (using the vector of names for these coefficients).
+
+We can use the normal distribution approximation for the coefficient estimates, saying that 95% confidence interval can be constructed as $[\hat{\beta} - 1.96 \hat{\sigma}, \hat{\beta} + 1.96 \hat{\sigma}]$, where $\hat{\beta}$ is the coefficient estimate and $\hat{\sigma}$ is the estimated standard error (which we just extracted). The easiest way to operationalize this in a subsequent plot is to store the upper and lower limit of this interval as separate columns in the dataset.
+```{r Get CI for estimates}
+# Get the heteroskedasticity robust vcov matrix and extract the standard errors for each coefficient
+diffse <- sqrt(diag(vcovHC(diffreg)))
+diffestimate['upper'] <- diffestimate$coeff + 1.96 * diffse[diffcoeffnames]
+diffestimate['lower'] <- diffestimate$coeff - 1.96 * diffse[diffcoeffnames]
+```
+To plot the confidence interval, we use `geom_errorbar`, which can take `ymin` (lower limit) and `ymax` (upper limit) as aesthetics.
+```{r Plot coefficient estimates with CI}
+diffestimate %>% ggplot(aes(x=date, y=coeff)) +
+  geom_point() + geom_line(linetype='dotted') +
+  geom_errorbar(aes(ymin=lower, ymax=upper)) +
+  geom_hline(yintercept=0, linetype='dashed') +
+  geom_vline(xintercept = as.numeric(entrydates), linetype = 'dotted') +
+  labs(x='Date', y='Difference log DDD')
+```
+We see that each estimated coefficient is very imprecise (in a statistical sense) here, which is understandable since there are very few observations informing each point estimate. This might be undesireable, as it seems apparent that the level is quite stable over time, except for the shift due to entry of generics.
+
+We could estimate coefficients with a coarser time resolution, for instance at the bi-annual level (6 months). To do this, I first create a variable that is the time in 6-month periods relative to the middle of the entry period (2006-01-01). The rest of the code is copied from above.
+```{r Biannual estimates}
+atcpharma['tentry'] <- floor(as.numeric((atcpharma$date - as.Date("2006-01-01"))/ (365 / 2)))
+
+diffreg2 <- lm(log(ddd) ~ entryatc * factor(tentry), data=atcpharma)
+
+# Get vector of names of coefficients
+coeffnames <- names(diffreg2$coefficients)
+# Get position in vector of interaction coefficients
+diffcoeffnames <- str_subset(coeffnames, "entryatcEntry:factor")
+# Store results in a dataframe
+diffestimate <- data_frame(coeff = diffreg2$coefficients[diffcoeffnames], 
+                           t = seq(-3, 3))
+
+diffse <- sqrt(diag(vcovHC(diffreg2)))
+diffestimate['upper'] <- diffestimate$coeff + 1.96 * diffse[diffcoeffnames]
+diffestimate['lower'] <- diffestimate$coeff - 1.96 * diffse[diffcoeffnames]
+```
+
+```{r Plot biannual coefficient estimates with CI}
+diffestimate %>% ggplot(aes(x=t, y=coeff)) +
+  geom_point() + geom_line(linetype='dotted') +
+  geom_errorbar(aes(ymin=lower, ymax=upper)) +
+  geom_hline(yintercept=0, linetype='dashed') +
+  geom_vline(xintercept = 0, linetype = 'dotted') +
+  labs(x='Time relative to entry', y='Difference log DDD')
+```
+We see that the difference in the pre-period does not exhibit any particular development, though the uncertainty is still quite large. The effect of entry on sales of originator is still estimated to be quite large, and stays relatively constant in the after-period, though the initial effect is quite a bit larger.
+
+
+### (c) DiD with difference between price and price ceiling
+Calculate price relative to maximum price:
+```{r Price relative to maximum price}
+atcpharma['pricediff'] <- atcpharma$maxprice - atcpharma$price
+atcpharma['lpricediff'] <- log(atcpharma$maxprice) - log(atcpharma$price)
+```
+
+```{r DiD plot price difference}
+atcpharma %>% filter(generic == 0) %>% group_by(entryatc, date) %>% 
+  summarize(price = mean(pricediff)) %>% 
+  ggplot(aes(date, price, shape=entryatc, linetype=entryatc, group=entryatc)) + 
+  geom_line() + geom_point() + 
+  geom_vline(xintercept = as.numeric(as.Date(c("2005-12-01", "2006-02-01"))), linetype = 'dotted') +
+  theme(legend.title = element_blank()) +
+  scale_linetype_manual(values=c("dashed", "solid")) +
+  labs(x="Date", y="Max. price - price (NOK/DDD)")
+```
+
+```{r DiD plot log price difference}
+atcpharma %>% filter(generic == 0) %>% group_by(entryatc, date) %>% 
+  summarize(price = mean(lpricediff)) %>% 
+  ggplot(aes(date, price, shape=entryatc, linetype=entryatc, group=entryatc)) + 
+  geom_line() + geom_point() + 
+  geom_vline(xintercept = as.numeric(as.Date(c("2005-12-01", "2006-02-01"))), linetype = 'dotted') +
+  theme(legend.title = element_blank()) +
+  scale_linetype_manual(values=c("dashed", "solid")) +
+  labs(x="Date", y="Log max. price - Log price (NOK/DDD)")
+```
+We see that there is a large spike in the difference to maximum price in the
+second month of generic entry. This is because the originator of the high priced
+ATC drops prices below maximum price by quite a bit in this month, after generics
+enter (one could make separate plots for each ATC to see this). This won't be a problem for the
+analysis itself, as they will be treated as separate observation units (each ATC),
+and we either drop the period where not all are treated (doughnut hole), or we
+allow a "rollout" (by including dummies for each time period).
+
+An actual problem might be the increase in price difference from maximum towards
+the end of the sample for the control group, which we have noted before. The
+question is what is actually driving this (the cause), and whether this is a
+reasonable counterfactual for the ATC's who experience entry. Without more
+investigation, we cannot know. For now, we will just do the estimates with and
+without this period included, and compare how much it matters for the estimated
+effect of entry.
+
+With both of these measures, the difference from the max price (price ceiling)
+for both groups seems very stable, and as good as zero. We can try to "zoom" in
+on the pre-period a bit more, to be sure:
+```{r Pre-trend plot price difference}
+atcpharma %>% filter(generic == 0 & !postentry) %>% group_by(entryatc, date) %>% 
+  summarize(price = mean(pricediff)) %>% 
+  ggplot(aes(date, price, shape=entryatc, linetype=entryatc, group=entryatc)) + 
+  geom_line() + geom_point() + 
+  geom_vline(xintercept = as.numeric(as.Date(c("2005-12-01", "2006-02-01"))), linetype = 'dotted') +
+  theme(legend.title = element_blank()) +
+  scale_linetype_manual(values=c("dashed", "solid")) +
+  labs(x="Date", y="Max. price - price (NOK/DDD)")
+```
+```{r Pre-trend plot log price difference}
+atcpharma %>% filter(generic == 0 & !postentry) %>% group_by(entryatc, date) %>% 
+  summarize(price = mean(lpricediff)) %>% 
+  ggplot(aes(date, price, shape=entryatc, linetype=entryatc, group=entryatc)) + 
+  geom_line() + geom_point() + 
+  geom_vline(xintercept = as.numeric(as.Date(c("2005-12-01", "2006-02-01"))), linetype = 'dotted') +
+  theme(legend.title = element_blank()) +
+  scale_linetype_manual(values=c("dashed", "solid")) +
+  labs(x="Date", y="Log max. price - Log price (NOK/DDD)")
+```
+We see that the pre-entry differences are miniscule, on average at the scale
+of one hundreth NOK, or 1 to 2 tenths of a percent. It seems okay to call this
+a completely flat pre-trend for both groups.
+
+We do the DiD regression with the log difference:
+```{r Price difference regression, results='asis', warning=FALSE}
+didpricediff.base <- lm(lpricediff ~ entryatc * postentry, data = filter(atcpharma, !interrim))
+didpricediff.timefe <- lm(lpricediff ~ entryatc + gencomp + factor(date), data = atcpharma)
+
+stargazer(didpricediff.base, didpricediff.timefe,
+          type="html",
+          style='aer',
+          digits = 2,
+          covariate.labels = c("Entry ATC", "After entry", "Entry ATC x After entry", "Generic competition"),
+          dep.var.labels = c("Log price diff."),
+          omit = "date",
+          omit.labels = "Time FE",
+          keep.stat = c("n","rsq"))
+```
+Both of the results are virtually identical. The estimated increase in the
+difference between price and maximum is about
+`r round(exp(didpricediff.timefe$coefficients['gencompCompetition']) - 1, 2) * 100`% (the difference between
+log-points and percentage goes the other way for positive numbers), which
+means that prices of originator drugs are reduced below the price ceiling on
+average.
+
+We can omit the period where the difference in the control group starts increasing
+(after May 2007), to check how this affects our estimates:
+```{r Price diff did drop period, results='asis', warning=FALSE}
+didpricediff.basedrop <- lm(lpricediff ~ entryatc * postentry,
+                            data = filter(atcpharma, !interrim & date <= "2007-05-01")
+                            )
+didpricediff.timefedrop <- lm(lpricediff ~ entryatc + gencomp + factor(date),
+                              data = filter(atcpharma, date <= "2007-05-01")
+                              )
+
+stargazer(didpricediff.base, didpricediff.timefe, didpricediff.basedrop, didpricediff.timefedrop,
+          type="html",
+          style='aer',
+          digits = 2,
+          covariate.labels = c("Entry ATC", "After entry", "Entry ATC x After entry", "Generic competition"),
+          dep.var.labels = c("Log price diff."),
+          omit = "date",
+          omit.labels = "Time FE",
+          keep.stat = c("n","rsq"))
+```
+Where we seee that the estimated effect is not very different, actually a bit
+lower. Considering the time profile from the graph, this is not too surprising,
+as a large share of the reduction in prices below maximum happens later in the
+sample period.
+Even though the average after-period level for the control group is lower when
+omitting the later period, so is the average after-period level for the treatment
+group. We could potentially estimate a time-profile for the effect on this
+variable, as in 10b, though what we would ideally like (as mentioned before),
+is to understand exactly what is driving the pattern we see for the control group,
+which might point to problems with the selection of the control group itself.
