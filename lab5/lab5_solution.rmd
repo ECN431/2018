@@ -1,0 +1,363 @@
+---
+title: "Lab 5 Solution"
+date: "March 21, 2018"
+output: 
+  html_notebook: 
+    highlight: tango
+    theme: flatly
+    toc: yes
+    toc_float: yes
+---
+
+```{r Setup, include = FALSE}
+rm(list=ls())
+library(tidyverse)
+library(caret) #Use the command install.packages("caret") to install the package
+library(haven)
+library(margins)
+library(foreach)
+```
+
+We begin by reading the dataset into R.
+
+```{r read data}
+fishdata <- read_dta("fisheries.dta")
+```
+
+If we look at the data, we see that the variables preservation, area and condition are stored as labelled numeric vectors. It will be more convenient for us to have them as factor variables, so we use the function as_factor from the haven package to convert them.
+
+```{r convert to factors}
+fishdata <- as_factor(fishdata)
+```
+
+#Descriptive Statistics
+
+##1
+We begin by counting the number of observations in each quality code.
+```{r counting}
+fishdata %>% 
+    count(quality)
+```
+
+We now generate the superior variable.
+```{r generate superior}
+fishdata <- fishdata %>% 
+    mutate(superior=ifelse(quality <= 12,1,0))
+```
+
+
+##2
+
+I like to use plots for getting to know the data so that is what I will do here, but tables can also be used.
+
+```{r fig.height=9, fig.width=7, warning=FALSE}
+fishdata %>% 
+    select(-quality) %>% #Superior is defined based on quality, so we will not include quality as a predictor
+    gather(key="predictor",value="value",-superior) %>% 
+    ggplot(aes(x=value,y=superior)) +
+    stat_summary(fun.y="mean",geom="col") +
+    facet_wrap("predictor",scales = "free_x") +
+    theme(axis.text.x = element_text(angle = 45,hjust = 1)) +
+    labs(x="Predictor Value",y="Percent Superior")
+```
+
+Based on the plots, it looks like all of the potential predictors contain information that can be useful when predicting fish quality. 
+
+#Divide the data into test and training sets
+
+##3
+
+###a and b
+We split the data into a training set containing 80% of the observations and a testing set containing the remaining 20%. These percentages are fairly common choices and should provide a good balance between having a large dataset on which to train the model and a sufficiently large testing set for it to be fairly representative. We use the function createDataPartition from the caret package to randomly allocate observations to the training and test set. We set the seed before allocating the variables to make sure our results can be reproduced.
+
+```{r data splitting}
+set.seed(10101)
+trainrows <- createDataPartition(y=fishdata$superior,
+                    p=0.8,
+                    list=FALSE)
+
+training <- fishdata[trainrows,]
+testing <- fishdata[-trainrows,]
+
+rm(fishdata,trainrows)
+```
+
+##4
+As is often the case, there are several ways of getting what we want:
+
+Using the tidyverse:
+```{r share1}
+training %>% 
+    summarize(superior=mean(superior))
+```
+
+Using base R:
+```{r share2}
+prop.table(table(training$superior))
+```
+
+The mean of superior is about 0.29. This tells us that about 29 percent of the 
+observations in the training data has superior quality, and about 71 percent of
+the observations has non-superior quality.
+
+If we had no information about a catch, we would predict that it was of non-superior quality (since the majority of the observations are of non-superior quality). Simply predicting that all observations are of non-superior quality will give 
+the right prediction about 71 percent of the time. We should therefore measure the models we build against this benchmark: If they are not classifying significantly more than 71 percent of the observations correctly they are not very good.
+
+##5
+
+###a
+
+```{r first logistic regression}
+logit1 <- glm(factor(superior) ~ condition,
+              data=training,
+              family=binomial())
+```
+
+The raw coefficients in a logistic regression are hard to interpret, but if we want to get some idea of what the estimated model implies we can use tha margins package to calculate average marginal effects (AMEs) which we can interpret in a similar way to the OLS coefficients we are used to (if you estimate the same equation with OLS you will see that the coefficients are very similar). 
+
+```{r marginal effects, warning=FALSE}
+summary(margins(logit1))
+```
+
+###b
+
+```{r obtaining predictions}
+training <- training %>% 
+    mutate(yhat=predict(logit1,type="response"))
+```
+
+###c
+
+```{r}
+training <- training %>%
+    mutate(class=round(yhat,0)) #Rounding to the neareast integer gives us the classification
+```
+
+###d
+
+We could do this using the tidyverse:
+
+```{r condition vs yhat 1}
+training %>% 
+    count(condition,yhat)
+```
+
+However, if we want to also show groups with zero observations, it is easier in base R:
+
+```{r condition vs yhat 2}
+table(Condition=training$condition,
+      "Prediction (yhat)"=round(training$yhat,4))
+```
+We see that all observations with condition equal to "Rund" got a predicted
+probability of of superior equal to 78.77. All observations with "Sløyd med hode" 
+got a predicted probability of superior equal to 27.89, and all observations with
+"Sløyd uten hode, rundsnitt" got a predicted probability of superior equal to 9.05
+
+###e
+
+Sometimes it can be useful to plot percentages instead of frequencies:
+
+```{r condition vs superior}
+prop.table(
+    table(Condition=training$condition,
+          Superior=training$superior),
+    margin=1)
+```
+
+We see that the predicted probabilities of superior quality in *d) correspond to the proportion (in the traing set) in each group that were superior: For observations in the training set where the condition was "Rund", 78.77 were superior. 
+The model therefore predicts that if an observation has condition equal to round, the probability of superior quality is 78.77.
+
+###f
+
+```{r}
+table(Condition=training$condition,
+      Class=training$class)
+```
+
+The classification rule is as follows: If the fish is "rund", classify as superior, 
+otherwise classify as non-superior.
+
+###g
+
+```{r generate success variable}
+training <- training %>% 
+    mutate(success=ifelse(class==superior,1,0))
+```
+
+###h
+
+The accuracy of the model in the training set is the mean of the success variable we just generated.
+
+```{r calculate training set accuracy}
+mean(training$success)
+```
+
+In order to obtain the accuracy in the testing set we will have to repeat the steps of calculating predictions and classifying observations.
+
+```{r calculate testing set accuracy}
+testing <- testing %>% 
+    mutate(yhat=predict(logit1, #Calculate predictions
+                        newdata=testing,
+                        type="response"),
+           class=round(yhat,0), #Classifying observations
+           success=ifelse(class==superior,1,0)) #Generate success variable
+```
+
+We can now calculate the success rate in the testing set as well:
+
+```{r}
+mean(testing$success)
+```
+
+We see that the model classified 78.1 percent of the observations in the training set correctly, and 77.9 percent of the observations in the test set correctly. This is a bit better than the about 71 percent that would be classified correctly
+by classifying all observations as non-superior. Also, we do not seem to have a problem with overfitting, since the performance on test set and training set is very similar. (This is not suprising since we have a lot of observations and a simple model.)
+
+##6 and 7
+
+In a setting like this when we are not estimating that many models, we could just do everything manually, but I have chosen to write a function mainly as an example of how it could be done. In any case, if we had more models to consider, we would use an algorithm to choose between them. I have included an example of how that can be done at the end of the notebook. 
+
+```{r}
+formula1 <- "superior ~ condition"
+formula2 <- "superior ~ condition + age"
+formula3 <- "superior ~ condition + age + tool"
+formula4 <- "superior ~ condition + age + tool + preservation"
+formula5 <- "superior ~ condition + age + tool + preservation + area"
+
+formulas <- c(formula1,formula2,formula3,formula4,formula5)
+
+```
+
+We can now write a function to estimate the models and calculate their performance. Note in particular the function confusionMatrix from the caret package which is a handy way of obtaining a range of performance measures for a model.
+
+```{r}
+estimationfunction <- function(formula) {
+    fit <- glm(formula,
+                   data=training,
+                   family=binomial())
+    
+    trainpred <- predict(fit,
+                         newdata=training,
+                         type="response")
+    
+    trainclass <- factor(round(trainpred,0))
+    
+    trainmatrix <- confusionMatrix(data=trainclass,
+                reference=factor(training$superior),
+                positive="1")
+    
+    trainingAccuracy <- trainmatrix$overall["Accuracy"]
+    trainingSensitivity <- trainmatrix$byClass["Sensitivity"]
+    trainingSpecificity <- trainmatrix$byClass["Specificity"]
+    
+    testpred <- predict(fit,
+                         newdata=testing,
+                         type="response")
+    
+    testclass <- factor(round(testpred,0))
+    testmatrix <- confusionMatrix(data=testclass,
+                reference=factor(testing$superior),
+                positive="1")
+    
+    testinggAccuracy <- testmatrix$overall["Accuracy"]
+    testingSensitivity <- testmatrix$byClass["Sensitivity"]
+    testingSpecificity <- testmatrix$byClass["Specificity"]
+    
+    results <- c(trainingAccuracy,trainingSensitivity,trainingSpecificity,
+                 testinggAccuracy,testingSensitivity,testingSpecificity)
+    
+    names(results) <- c("trainingAccuracy","trainingSensitivity","trainingSpecificity",
+                        "testingAccuracy","testingSensitivity","testingSpecificity")
+    
+    return(results)
+}
+```
+
+
+```{r}
+results <- foreach (model=formulas,.combine = rbind) %do% {
+    estimationfunction(model)
+}
+
+results <- data.frame(results,Model=paste("Model",seq(1,length(formulas),1)))
+rownames(results) <- NULL
+colnames(results) <- c("Training Accuracy","Training Sensitivity","Training Specificity",
+                        "Testing Accuracy","Testing Sensitivity","Testing Specificity","Model")
+
+print(results)
+```
+
+This table is not that easy to read, we could spend more time making it more readable or we can make a plot:
+
+```{r}
+results %>% 
+    gather(key="Measure",value="Value",-Model) %>% 
+    ggplot(aes(x=Model,y=Value)) +
+    geom_col() +
+    facet_wrap("Measure") +
+    theme(axis.text.x = element_text(angle=45,hjust=1))
+```
+
+We see that the two first models do quite a bit worse than the other models when it comes to accuracy. We also see that they perform far worse on sensitivity, meaning that they are more likely to falsely classify deliveries of superior quality as non-superior. This in turn leads to the first to models performing slightly better on specificity, i.e. they do a slighly better job of classifying non-superior delivereis as non-superior. However, because the overall accuracy is far lower for the first two models, we would have to put an extremely high weight on avoiding false positives to prefer one of them. 
+
+#Extra
+
+(Some of the chunks in this part of the notebook take a while to run)
+
+Instead of trying out a range of different specification ourselves, we can use an algorithm to determine the best model. ONe of the key selling points of the caret package is that it provides a common interface to a wide list of machine learning packages, greatly reducing the cost of implementing them. It also handles parameter tuning, for example using cross-validation. One of the packages that can be accessed through caret is the [glmnet](https://cran.r-project.org/web/packages/glmnet/index.html "glmnet documentation") package. The glmnet package can be used to estimate OLS and logistic regression (among others) with regularization, meaning that it attempts to drop predictors that do not improve predictive power.
+
+```{r}
+tc <- trainControl(method = "cv", #This states that we want to use cross-validation to tune the model
+                   verboseIter = TRUE, #we could set this to false to avoid having the information about the tuning process printed, but it can be useful to have that information when waiting for the estimation to finish. 
+                   number=5, #This states that we want to do five-fold cross-validation
+                   returnData=FALSE)
+
+set.seed(10101)
+glm_fit <- train(factor(superior) ~ condition + age + tool + preservation + area,
+                data=training,
+                trControl=tc,
+                tuneLength=5, #This specifies how many values of the tuning parameters we want to test, increasing this will lead to longer computing times but possibly better predictions. 
+                method="glmnet")
+
+ggplot(glm_fit)
+```
+
+```{r}
+confusionMatrix(data=predict(glm_fit,newdata=testing),
+                reference=factor(testing$superior),
+                positive="1")
+```
+
+We see that the best performance is achieved for the lowest value of lambda  (the regularization parameter), which implies that overfit is not a big concern in this setting. The fact that the accuracy of the model is about the same also supports this view. In this case this was not very surprising given what we saw when we compared the different model specifications. 
+
+As a last example we can also use the [ranger](https://cran.r-project.org/web/packages/ranger/index.html "ranger documentation") algorithm, which is a fast random forest implementation in R. Random forests are useful because they do not have that many tuning parameters but are still often able to give fairly good approximations of complicated relationships, including interactions and nonlinearities. 
+
+```{r}
+library(parallel)
+
+grid <- expand.grid(mtry=c(2,
+                           floor(ncol(model.matrix(~ condition + age + tool + preservation + area - 1,
+                                             data=training))/2),
+                           ncol(model.matrix(~ condition + age + tool + preservation + area - 1,
+                                             data=training)) - 1),
+                    splitrule="gini",
+                    min.node.size=1) #Here i specify the tuning values to try manually instead of having caret select them. In this case this is mainly to reduce computing time, but in other cases we may want to try different values than the default ones. 
+
+set.seed(10101)
+rf_fit <- train(factor(superior) ~ condition + age + tool + preservation + area,
+                data=training,
+                trControl=tc,
+                tuneGrid=grid,
+                method="ranger",
+                verbose=FALSE,
+                num.threads=detectCores()-1) #ranger runsexecutes the code using all cpu cores by default, I here specify that it should use all but one of the available cores. 
+
+ggplot(rf_fit)
+```
+
+```{r}
+confusionMatrix(data=predict(rf_fit,newdata=testing),
+                reference=factor(testing$superior),
+                positive="1")
+```
+
+We see that we get a marginal improvement in accuracy over the previous models. The fact that the improvement is small should not come as a surprise given that we have a limited amount of predictors available and most of them are categorical. 
